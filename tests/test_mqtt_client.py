@@ -703,3 +703,119 @@ async def test_monitor_reraises_connect_error_from_subscribe(mqtt_mapping):
     with patch("aiomqtt.Client", return_value=mock_ctx):
         with pytest.raises(ConnectError, match="broker dropped connection"):
             await client.monitor(lambda s: None)
+
+
+# ---------------------------------------------------------------------------
+# _decode_sharkiq_protobuf_v1 — settings, job flags and map frames
+# ---------------------------------------------------------------------------
+
+
+def test_decode_sharkiq_settings_default_when_fields_absent():
+    result = _decode_sharkiq_protobuf_v1(_build_status_payload(14, 3, 100), _MODES)
+    assert result.recharge_resume is False
+    assert result.evac_resume is False
+    assert result.job_active is False
+    assert result.deep_clean is None
+    assert result.map is None
+
+
+def test_decode_sharkiq_settings_reflected_by_presence():
+    payload = (
+        _build_status_payload(6, 3, 90)
+        + _field(35, 0, _varint(2))
+        + _field(36, 0, _varint(2))
+        + _field(45, 0, _varint(2))
+    )
+    result = _decode_sharkiq_protobuf_v1(payload, _MODES)
+    assert result.recharge_resume is True
+    assert result.evac_resume is True
+    assert result.job_active is True
+
+
+@pytest.mark.parametrize("value, expected", [(2, False), (1, True)])
+def test_decode_sharkiq_deep_clean_from_field_40(value, expected):
+    payload = _build_status_payload(6, 3, 90) + _field(40, 0, _varint(value))
+    assert _decode_sharkiq_protobuf_v1(payload, _MODES).deep_clean is expected
+
+
+def _map_frame_payload(mode: int = 6) -> bytes:
+    """A status payload with a minimal map in field 7 (2x2 grid, one path point)."""
+    origin = _field(1, 5, struct.pack("<f", -1.0)) + _field(2, 5, struct.pack("<f", 0.5))
+    grid = (
+        _field(1, 5, struct.pack("<f", 0.06))
+        + _field(2, 2, _ld(origin))
+        + _field(3, 0, _varint(2))
+        + _field(4, 0, _varint(2))
+        + _field(6, 2, _ld(b"\x0f\x64\x4b\x00"))
+    )
+    path = (
+        _field(1, 5, struct.pack("<f", 0.002))
+        + _field(2, 0, _varint(2))
+        + _field(3, 2, _ld(struct.pack("<2h", 100, -50)))
+    )
+    map_fields = _field(5, 2, _ld(grid)) + _field(8, 2, _ld(path))
+    return _build_status_payload(mode, 3, 90) + _field(7, 2, _ld(map_fields))
+
+
+def test_decode_sharkiq_map_frame_attaches_map_and_keeps_raw_small():
+    result = _decode_sharkiq_protobuf_v1(_map_frame_payload(), _MODES)
+    assert result.mode == VacuumMode.CLEANING
+    assert result.battery_level == 90
+    assert result.map is not None
+    assert (result.map.grid.width, result.map.grid.height) == (2, 2)
+    assert len(result.map.path) == 1
+    # The map blob is decoded once, by the map decoder, and not left in raw.
+    assert 7 not in result.raw["protobuf_fields"]
+    assert result.raw["protobuf_fields"][4] == 6
+
+
+def test_decode_sharkiq_field_7_without_grid_yields_no_map():
+    payload = _build_status_payload(6, 3, 90) + _field(7, 2, _ld(_field(1, 0, _varint(1))))
+    result = _decode_sharkiq_protobuf_v1(payload, _MODES)
+    assert result.map is None
+    assert 7 not in result.raw["protobuf_fields"]
+
+
+# ---------------------------------------------------------------------------
+# send() — runtime-built payloads
+# ---------------------------------------------------------------------------
+
+
+def _mock_aiomqtt_client():
+    inner = AsyncMock()
+    ctx = AsyncMock()
+    ctx.__aenter__ = AsyncMock(return_value=inner)
+    ctx.__aexit__ = AsyncMock(return_value=False)
+    return inner, ctx
+
+
+async def test_send_publishes_base64_encoded_payload(mqtt_mapping):
+    client = MQTTVacuumClient("host", mqtt_mapping)
+    inner, ctx = _mock_aiomqtt_client()
+    with patch("aiomqtt.Client", return_value=ctx):
+        result = await client.send(b"\x80\x01\x09")
+    assert result is True
+    inner.publish.assert_awaited_once_with("/qfeel/PbInput", payload="gAEJ")
+
+
+async def test_send_publishes_raw_payload_when_encoding_is_raw(mqtt_mapping):
+    mqtt_mapping.encoding = "raw"
+    client = MQTTVacuumClient("host", mqtt_mapping)
+    inner, ctx = _mock_aiomqtt_client()
+    with patch("aiomqtt.Client", return_value=ctx):
+        await client.send(b"\x80\x01\x09")
+    inner.publish.assert_awaited_once_with("/qfeel/PbInput", payload=b"\x80\x01\x09")
+
+
+async def test_send_wraps_broker_errors_in_connect_error(mqtt_mapping):
+    client = MQTTVacuumClient("host", mqtt_mapping)
+    with patch("aiomqtt.Client", side_effect=OSError("refused")):
+        with pytest.raises(ConnectError, match="MQTT error"):
+            await client.send(b"\x00")
+
+
+async def test_send_without_aiomqtt_raises_connect_error(mqtt_mapping):
+    client = MQTTVacuumClient("host", mqtt_mapping)
+    with patch.dict(sys.modules, {"aiomqtt": None}):
+        with pytest.raises(ConnectError, match="aiomqtt is required"):
+            await client.send(b"\x00")

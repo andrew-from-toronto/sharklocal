@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, Optional
 from .exceptions import ActionNotSupportedError, CommandError, ConnectError, DecoderError
 from .mappings.base import MQTTMappingConfig
 from .models import VacuumMode, VacuumStatus
-from . import protobuf
+from . import protobuf, vacuum_map
 
 
 # Registry mapping decoder name -> callable(payload_bytes, modes) -> VacuumStatus.
@@ -48,7 +48,23 @@ def _decode_sharkiq_protobuf_v1(
 
       * Field 1 — ``ChargingState`` (3 = ``CHARGING_ON_DOCK``)
       * Field 8 — ``battery_percent`` (0–100)
+
+    * Field 35 — present (``2``) while Recharge & Resume is enabled
+    * Field 36 — present (``2``) while Evac & Resume is enabled
+    * Field 40 — ``2`` normal clean / ``1`` Matrix or Spot clean (during a job)
+    * Field 45 — ``2`` while a job is active, ``0`` otherwise
+    * Field 7  — map data on map-bearing frames (see :mod:`sharklocal.vacuum_map`)
     """
+    fields = protobuf.decode_fields(payload)
+
+    # Map frames are large binary blobs that decode_raw would mis-parse as
+    # nested messages; decode them separately and keep them out of ``raw``.
+    map_blob = fields.pop(vacuum_map.FIELD_MAP, None)
+    decoded_map = None
+    if map_blob is not None:
+        decoded_map = vacuum_map.decode_map({vacuum_map.FIELD_MAP: map_blob, **fields})
+        payload = protobuf.remove_field(payload, vacuum_map.FIELD_MAP)
+
     raw = protobuf.decode_raw(payload)
 
     mode_int = raw.get(4, 0)
@@ -66,11 +82,24 @@ def _decode_sharkiq_protobuf_v1(
         charging_state = battery_info.get(1, 0)
         charging = charging_state == 3  # ChargingState.CHARGING_ON_DOCK
 
+    # Settings are reflected by presence: the field disappears when switched off.
+    recharge_resume = 35 in raw
+    evac_resume = 36 in raw
+    job_active = raw.get(45) == 2
+    deep_clean: Optional[bool] = None
+    if 40 in raw:
+        deep_clean = raw[40] == 1
+
     return VacuumStatus(
         mode=mode,
         battery_level=battery_percent,
         charging=charging,
         raw={"protobuf_fields": raw},
+        job_active=job_active,
+        deep_clean=deep_clean,
+        recharge_resume=recharge_resume,
+        evac_resume=evac_resume,
+        map=decoded_map,
     )
 
 
@@ -152,6 +181,35 @@ class MQTTVacuumClient:
             ) from exc
 
         raise CommandError(f"Unrecognised MQTT action type '{spec.type}'")
+
+    async def send(self, payload: bytes) -> bool:
+        """Publish a raw command payload that is built at runtime.
+
+        Used for commands whose content depends on state — room selection
+        carries the map's room definition — and so cannot be a fixed mapping
+        action. *payload* is the protobuf message bytes; it is encoded per the
+        mapping's ``encoding`` before publishing.
+
+        Raises:
+            ConnectError: If the MQTT broker cannot be reached.
+        """
+        try:
+            import aiomqtt
+        except ImportError as exc:
+            raise ConnectError("aiomqtt is required for MQTT support") from exc
+
+        encoded: Any = payload
+        if self.mapping.encoding == "base64":
+            encoded = base64.b64encode(payload).decode("ascii")
+
+        try:
+            async with aiomqtt.Client(self.host, port=self.mapping.port) as client:
+                await client.publish(self.mapping.command_topic, payload=encoded)
+        except Exception as exc:
+            raise ConnectError(
+                f"MQTT error connecting to {self.host}:{self.mapping.port}: {exc}"
+            ) from exc
+        return True
 
     async def _request_status(self, command_payload: str, timeout: float) -> VacuumStatus:
         """Publish a status-request command and return the decoded first response."""
