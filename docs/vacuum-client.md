@@ -98,6 +98,12 @@ print(vacuum.via)   # "REST", "MQTT", or "NONE" depending on what responded
 | `get_events()` | `GET /get/event_log` | *(not in MQTT mapping)* |
 | `get_device_info()` | `GET /get/robot_id` | *(not in MQTT mapping)* |
 | `get_wifi_status()` | `GET /get/wifi_status` | *(not in MQTT mapping)* |
+| `find_robot()` | *(not in REST mapping)* | `find_robot` (command) |
+| `set_suction(level)` | *(not in REST mapping)* | `set_suction_eco` / `_normal` / `_max` (command) |
+| `set_recharge_resume(enabled)` | *(not in REST mapping)* | `recharge_resume_on` / `_off` (command) |
+| `set_evac_resume(enabled)` | *(not in REST mapping)* | `evac_resume_on` / `_off` (command) |
+| `clean_rooms(names, deep=False, vacuum_map=None)` | *(not in REST mapping)* | runtime-built payload, then `start_cleaning` |
+| `clean_spot(x, y, vacuum_map=None)` | *(not in REST mapping)* | runtime-built payload, then `start_cleaning` |
 
 ### Return Types
 
@@ -124,6 +130,51 @@ async with VacuumClient("192.168.1.100", mqtt_mappings="sharkiq_v1") as vacuum:
 
     await vacuum.stop_monitoring()
 ```
+
+While monitoring, the client keeps the most recent status in `vacuum.last_status` and the most recent **persisted** map in `vacuum.last_map` (see below). Live map frames update `last_status.map` but never replace `last_map`, so the room definition stays available through a job.
+
+---
+
+## Maps, Rooms and Settings
+
+These are MQTT-only and, today, specific to the `sharkiq_v1` mapping. Models that publish map frames deliver them through monitoring: every `VacuumStatus` that carries map data has `status.map` set to a `VacuumMap`.
+
+```python
+def on_status(status: VacuumStatus) -> None:
+    if status.map is None:
+        return
+    robot = status.map.robot                      # MapPose(x, y, heading) or None
+    print(len(status.map.path), "path points, robot at", robot)
+    if status.map.persisted:                      # the end-of-job frame
+        print([room.name for room in status.map.rooms])
+        print([e.code for e in status.map.log if e.key == "DT_WARNING_CODE"])
+
+vacuum.on_status_update(on_status)
+await vacuum.start_monitoring()
+```
+
+### Settings and locate
+
+```python
+await vacuum.find_robot()                          # play the locate sound
+await vacuum.set_suction(SuctionLevel.MAX)         # "eco" | "normal" | "max"
+await vacuum.set_recharge_resume(True)
+await vacuum.set_evac_resume(False)
+```
+
+Recharge & Resume and Evac & Resume are read back from `VacuumStatus.recharge_resume` / `evac_resume`. The suction level is **not** reported in status — the robot echoes a change once and is then silent about it — so keep the last value you set if you need to display it.
+
+### Room, Matrix and spot cleaning
+
+```python
+# Needs a persisted map for the room definition: either the one the client
+# cached while monitoring (vacuum.last_map) or one you pass in.
+await vacuum.clean_rooms(["Kitchen", "Hallway"])
+await vacuum.clean_rooms(["Kitchen"], deep=True)   # Matrix Clean (two passes)
+await vacuum.clean_spot(1.2, -0.4)                 # ~1.5 m square around (x, y) metres
+```
+
+Each of these publishes the map's room definition with the selection, then `start_cleaning`. Room names must match `VacuumMap.rooms` exactly (`ValueError` otherwise); with no persisted map available a `SharklocalError` is raised. Because the room definition is re-uploaded in full, **always use the latest persisted map** — a stale one renames rooms back to the names it was captured with.
 
 ---
 
