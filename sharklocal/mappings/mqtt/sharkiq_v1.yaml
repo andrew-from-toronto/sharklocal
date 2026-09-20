@@ -18,24 +18,66 @@ status_decoder: sharkiq_protobuf_v1
 # Maps protobuf OperatingMode integer values to normalized VacuumMode strings.
 # Reference: sharkiq.proto OperatingMode enum
 modes:
+  4: idle
   6: cleaning
   7: returning_to_dock
   13: docking
   14: docked
 
+# Payloads are protobuf. Field 16 is the job command (9 start, 17 return to
+# dock); field 7 carries settings, which the robot echoes back in field 8 of
+# the next status message.
 actions:
   start_cleaning:
     type: command
-    payload: "OgQKAhBLgAEJ"
+    payload: "gAEJ"
 
+  # The app bundles a suction change into its start/dock messages; these
+  # send the bare job command so the setting is left alone.
   stop:
     type: command
-    payload: "OgQKAhAygAER"
+    payload: "gAER"
 
   # go_home issues the same stop-and-return command as stop in this protocol.
   go_home:
     type: command
-    payload: "OgQKAhAygAER"
+    payload: "gAER"
+
+  # Field 25 = 104
+  find_robot:
+    type: command
+    payload: "yAFo"
+
+  # Field 7.1.2 = 50 / 75 / 100
+  set_suction_eco:
+    type: command
+    payload: "OgQKAhAy"
+
+  set_suction_normal:
+    type: command
+    payload: "OgQKAhBL"
+
+  set_suction_max:
+    type: command
+    payload: "OgQKAhBk"
+
+  # Field 7.8 = 1 / 2. Reflected by field 35 present / absent in status.
+  recharge_resume_on:
+    type: command
+    payload: "OgJAAQ=="
+
+  recharge_resume_off:
+    type: command
+    payload: "OgJAAg=="
+
+  # Field 7.7 = 1 / 2. Reflected by field 36 present / absent in status.
+  evac_resume_on:
+    type: command
+    payload: "OgI4AQ=="
+
+  evac_resume_off:
+    type: command
+    payload: "OgI4Ag=="
 
   get_status:
     type: status_request
