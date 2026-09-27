@@ -72,6 +72,12 @@ actions:
     type: command
     payload: "gAEm"
 
+  # Field 39 = 1: FloorControlT FL_CTR_LOAD_ALL. The robot answers with its
+  # persisted map (floor type 4) on the status topic.
+  request_map:
+    type: command
+    payload: "uAIB"
+
   # Field 25 = 104
   find_robot:
     type: command

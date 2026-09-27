@@ -99,6 +99,7 @@ print(vacuum.via)   # "REST", "MQTT", or "NONE" depending on what responded
 | `get_device_info()` | `GET /get/robot_id` | *(not in MQTT mapping)* |
 | `get_wifi_status()` | `GET /get/wifi_status` | *(not in MQTT mapping)* |
 | `find_robot()` | *(not in REST mapping)* | `find_robot` (command) |
+| `request_map()` | *(not in REST mapping)* | `request_map` (command; the map arrives through monitoring) |
 | `set_suction(level)` | *(not in REST mapping)* | `set_suction_eco` / `_normal` / `_max` (command) |
 | `set_recharge_resume(enabled)` | *(not in REST mapping)* | `recharge_resume_on` / `_off` (command) |
 | `set_evac_resume(enabled)` | *(not in REST mapping)* | `evac_resume_on` / `_off` (command) |
@@ -161,6 +162,7 @@ await vacuum.start_monitoring()
 
 ```python
 await vacuum.find_robot()                          # play the locate sound
+await vacuum.request_map()                         # re-send the saved map (last job, no event log)
 await vacuum.set_suction(SuctionLevel.MAX)         # "eco" | "normal" | "max"
 await vacuum.set_recharge_resume(True)
 await vacuum.set_evac_resume(False)

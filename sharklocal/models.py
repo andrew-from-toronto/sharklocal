@@ -201,6 +201,9 @@ class VacuumMap:
     path: List[MapPoint] = field(default_factory=list)
     poses: List[MapPose] = field(default_factory=list)
     persisted: bool = False
+    # The end-of-job frame, which alone carries the event log. A persisted map
+    # sent on request is not a report.
+    report: bool = False
     map_id: Optional[str] = None
     name: Optional[str] = None
     dock: Optional[MapPose] = None
@@ -208,6 +211,7 @@ class VacuumMap:
     features: List[MapFeature] = field(default_factory=list)
     log: List[VacuumLogEntry] = field(default_factory=list)
     job_started: Optional[int] = None  # Unix epoch seconds
+    job_minutes: Optional[int] = None  # whole minutes, docking included
     raw: Dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -232,18 +236,21 @@ class VacuumMap:
 
     @property
     def clean_time(self) -> Optional[int]:
-        """Seconds spent cleaning in the last job, from the robot's event log.
+        """Seconds spent cleaning in the last job.
 
-        The sum of the log's ``DT_*_CLEAN_TIME`` entries (normal, wall-follow
-        and escape cleaning; docking is logged separately). ``None`` when the
-        log carries none — live frames have no log.
+        The sum of the event log's ``DT_*_CLEAN_TIME`` entries (normal,
+        wall-follow and escape cleaning; docking is logged separately). A map
+        without a log (one sent on request) falls back to the job summary's
+        whole minutes, which include docking. ``None`` when neither is there.
         """
         times = [
             int(entry.code)
             for entry in self.log
             if entry.key.endswith("_CLEAN_TIME") and entry.code.isdigit()
         ]
-        return sum(times) if times else None
+        if times:
+            return sum(times)
+        return self.job_minutes * 60 if self.job_minutes else None
 
     def to_dict(self) -> Dict[str, Any]:
         """Return a JSON-serialisable form of the map, for storage.
@@ -279,6 +286,8 @@ class VacuumMap:
             path=[MapPoint(**p) for p in data.get("path", [])],
             poses=[MapPose(**p) for p in data.get("poses", [])],
             persisted=data.get("persisted", False),
+            # Stored before this field existed: only reports were persisted then.
+            report=data.get("report", data.get("persisted", False)),
             map_id=data.get("map_id"),
             name=data.get("name"),
             dock=MapPose(**dock) if dock else None,
@@ -297,6 +306,7 @@ class VacuumMap:
             ],
             log=[VacuumLogEntry(**e) for e in data.get("log", [])],
             job_started=data.get("job_started"),
+            job_minutes=data.get("job_minutes"),
         )
 
 

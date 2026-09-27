@@ -63,7 +63,7 @@ The table below shows which features are available per transport for the built-i
 >
 > ² Built at runtime from the persisted map's room definition (`VacuumClient.clean_rooms()` / `clean_spot()`), not a fixed mapping action.
 >
-> ³ Carried by the persisted map frame the robot publishes when it docks, available through monitoring (`VacuumStatus.map`), not by request.
+> ³ Carried by the persisted map frame the robot publishes when it docks, available through monitoring (`VacuumStatus.map`). `VacuumClient.request_map()` makes the robot publish it again, without the event log.
 
 **Recommendations:**
 - Configure **both transports** (`rest_mappings` + `mqtt_mappings`) to get full feature coverage: REST for device info and explore; MQTT for real-time monitoring, maps, rooms and settings.

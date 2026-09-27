@@ -44,6 +44,7 @@
 | Suction / brushroll / side-brush motor speeds | ❌ | ✅ | MQTT: `sharkiq_v1` |
 | Live map (grid, cleaned path, robot pose with heading) | ❌ | ✅ | MQTT: `sharkiq_v1` |
 | Persisted map (rooms, room raster, walls, doors, dock, cleaned area, clean time, event log) | ❌ | ✅ | MQTT: `sharkiq_v1` |
+| Persisted map on request (`request_map`: the same, less the event log) | ❌ | ✅ | MQTT: `sharkiq_v1` |
 | Firmware versions | ❌ | ✅ ⁵ | MQTT: `sharkiq_v1` |
 
 > ² Derived from the robot's system state (charging on the dock). The device-info field once read as a charging state is the Wi-Fi state: it reads `3` in every frame, including mid-clean.

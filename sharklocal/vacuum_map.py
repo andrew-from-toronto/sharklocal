@@ -8,6 +8,10 @@ inside top-level field ``7``:
 * **Persisted frame** (~92 KB, once, as the robot reaches the dock; flagged by
   top-level field ``3 = 1``) — the saved map with rooms, wall and door vectors,
   the dock pose, job statistics and the robot's own event log.
+* **Requested map** (~97 KB, on request: ``VacuumClient.request_map()``) — the
+  same saved map, including the last job's path and summary, but without the
+  event log or the field ``3`` flag. The floor's own type (``7.4``) says it is
+  the persisted map.
 
 Coordinates are metres in the map frame; ``cell = (m - origin) / resolution``.
 Everything here was reverse-engineered from live captures, so field meanings
@@ -35,6 +39,11 @@ from .models import (
 # Top-level fields of a status frame that carry map data.
 FIELD_MAP = 7
 FIELD_PERSISTED_FLAG = 3
+
+# Field 7.4 is the floor's MapTypeT (the app's schema): 1 MT_RT_UPLOAD (live),
+# 2 MT_REPORT (the end-of-job frame), 4 MT_PERSIST (the saved map, as sent on
+# request).
+MAP_TYPE_PERSIST = 4
 
 # Room-record fields the app adds to a room selected for Matrix (deep) Clean.
 _DEEP_CLEAN_FIELDS = ((7, 2), (9, 0), (10, 2))
@@ -84,13 +93,15 @@ def decode_map(fields: Dict[int, List[Any]]) -> Optional[VacuumMap]:
         return None
 
     grid = _decode_grid(m[5][0])
-    persisted = _first(fields, FIELD_PERSISTED_FLAG) == 1
+    report = _first(fields, FIELD_PERSISTED_FLAG) == 1
+    persisted = report or _first(m, 4) == MAP_TYPE_PERSIST
 
     vacuum_map = VacuumMap(
         grid=grid,
         path=_decode_points(_first(m, 8)),
         poses=_decode_poses(_first(m, 10)),
         persisted=persisted,
+        report=report,
         map_id=_text(_first(m, 3)),
         name=_text(_first(m, 2)),
         dock=_decode_pose_f32(_first(m, 7)),
@@ -106,14 +117,16 @@ def decode_map(fields: Dict[int, List[Any]]) -> Optional[VacuumMap]:
         if isinstance(room_ids, bytes) and len(room_ids) == len(grid.cells):
             grid.room_ids = room_ids
 
-    # Field 11 is a job summary; .1 is the job's start epoch. Its .3 and .6
-    # looked like duration and cleaned cells on one capture, but they barely
-    # moved between two different jobs (335 -> 306, 3947 -> 3978) while the
-    # robot's own log said 101 s and 70 s of cleaning, so they are not decoded:
-    # cleaned area comes from the grid and clean time from the log.
+    # Field 11 is PbMapSummary (the app's schema): .1 beginTime, .2
+    # currentCleanTime, .3 currentArea, .4-.6 lifetime totals. .2 is whole
+    # minutes of the job, docking included: 3 for a job that ran 216 s and
+    # logged 101 s of cleaning. .3 is not decoded: cleaned area comes from the
+    # grid (2709 against 25.6 m2 of cleaned cells suggests 0.01 m2, unconfirmed).
     stats = _first(m, 11)
     if isinstance(stats, bytes):
-        vacuum_map.job_started = _first(_fields(stats), 1)
+        summary = _fields(stats)
+        vacuum_map.job_started = _first(summary, 1)
+        vacuum_map.job_minutes = _first(summary, 2)
 
     # Field 20.3.6 is the robot's event log as a JSON array of {key, time, code}.
     vacuum_map.log = _decode_log(_first(m, 20))

@@ -598,6 +598,7 @@ async def test_stop_monitoring_cancels_task():
     "method_name, args, expected_action",
     [
         ("find_robot", (), "find_robot"),
+        ("request_map", (), "request_map"),
         ("set_suction", (SuctionLevel.ECO,), "set_suction_eco"),
         ("set_suction", ("normal",), "set_suction_normal"),
         ("set_suction", (SuctionLevel.MAX,), "set_suction_max"),
@@ -813,6 +814,46 @@ async def test_on_monitor_status_forwards_to_async_callback_and_caches_persisted
     await client._on_monitor_status(VacuumStatus(mode=VacuumMode.DOCKED))
     assert len(received) == 2
     assert client.last_map is persisted  # a later map-less status keeps it
+
+
+def _job_map(*, report: bool, job_started: int) -> VacuumMap:
+    vacuum_map = _persisted_map()
+    vacuum_map.report = report
+    vacuum_map.job_started = job_started
+    return vacuum_map
+
+
+async def test_requested_map_does_not_replace_the_report_of_the_same_job():
+    client = _make_vacuum_client_with_mocks()
+    client.on_status_update(lambda s: None)
+    report = _job_map(report=True, job_started=100)
+    await client._on_monitor_status(VacuumStatus(mode=VacuumMode.DOCKED, map=report))
+    await client._on_monitor_status(
+        VacuumStatus(mode=VacuumMode.DOCKED, map=_job_map(report=False, job_started=100))
+    )
+    assert client.last_map is report  # keeps the event log
+
+
+async def test_requested_map_of_a_newer_job_replaces_the_report():
+    client = _make_vacuum_client_with_mocks()
+    client.on_status_update(lambda s: None)
+    await client._on_monitor_status(
+        VacuumStatus(mode=VacuumMode.DOCKED, map=_job_map(report=True, job_started=100))
+    )
+    requested = _job_map(report=False, job_started=200)
+    await client._on_monitor_status(VacuumStatus(mode=VacuumMode.DOCKED, map=requested))
+    assert client.last_map is requested
+
+
+async def test_report_replaces_a_requested_map_of_the_same_job():
+    client = _make_vacuum_client_with_mocks()
+    client.on_status_update(lambda s: None)
+    await client._on_monitor_status(
+        VacuumStatus(mode=VacuumMode.DOCKED, map=_job_map(report=False, job_started=100))
+    )
+    report = _job_map(report=True, job_started=100)
+    await client._on_monitor_status(VacuumStatus(mode=VacuumMode.DOCKED, map=report))
+    assert client.last_map is report
 
 
 async def test_start_monitoring_wraps_callback():

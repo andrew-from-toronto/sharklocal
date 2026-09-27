@@ -173,6 +173,16 @@ class VacuumClient:
         """Begin a mapping/exploration run."""
         return await self._execute("explore")
 
+    async def request_map(self) -> bool:
+        """Ask the robot to publish its persisted map (MQTT only).
+
+        The reply arrives through monitoring like any other map frame, and
+        carries the last job's path and summary but no event log — a way to
+        recover a job whose end-of-job frame was missed. Sent while docked; not
+        tried mid-job.
+        """
+        return await self._execute("request_map")
+
     async def get_status(self) -> VacuumStatus:
         """Return the current vacuum status."""
         return await self._execute("get_status")
@@ -409,13 +419,27 @@ class VacuumClient:
     async def _on_monitor_status(self, status: VacuumStatus) -> None:
         """Cache the latest status and persisted map, then forward to the callback."""
         self.last_status = status
-        if status.map is not None and status.map.persisted:
+        if status.map is not None and status.map.persisted and not self._same_job_poorer(status.map):
             self.last_map = status.map
         callback = self._status_callback
         if asyncio.iscoroutinefunction(callback):
             await callback(status)
         else:
             callback(status)  # type: ignore[misc]
+
+    def _same_job_poorer(self, vacuum_map: VacuumMap) -> bool:
+        """``True`` if *vacuum_map* would replace a report of the same job.
+
+        A requested map repeats the last job without its event log, so it only
+        supersedes the cached map when it records a different job.
+        """
+        current = self.last_map
+        return (
+            not vacuum_map.report
+            and current is not None
+            and current.report
+            and current.job_started == vacuum_map.job_started
+        )
 
     async def stop_monitoring(self) -> None:
         """Stop background status monitoring if it is running."""

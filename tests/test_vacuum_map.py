@@ -238,7 +238,30 @@ def test_decode_job_start_only():
     fields = protobuf.encode_bytes_field(5, _grid_message()) + protobuf.encode_bytes_field(11, stats)
     vacuum_map = decode_map(_frame(fields))
     assert vacuum_map.job_started == 1789867008
+    assert vacuum_map.job_minutes is None
     assert not hasattr(vacuum_map, "job_duration")
+
+
+def test_decode_job_minutes_and_clean_time_without_a_log():
+    stats = protobuf.encode_varint_field(1, 1790503168) + protobuf.encode_varint_field(2, 33)
+    fields = protobuf.encode_bytes_field(5, _grid_message()) + protobuf.encode_bytes_field(11, stats)
+    vacuum_map = decode_map(_frame(fields))
+    assert vacuum_map.job_minutes == 33
+    assert vacuum_map.clean_time == 33 * 60  # no log: the summary's minutes
+
+
+@pytest.mark.parametrize("map_type, persisted", [(4, True), (1, False), (2, False)])
+def test_floor_type_4_is_persisted_without_the_report_flag(map_type, persisted):
+    fields = protobuf.encode_varint_field(4, map_type) + protobuf.encode_bytes_field(5, _grid_message())
+    vacuum_map = decode_map(_frame(fields))
+    assert vacuum_map.persisted is persisted
+    assert vacuum_map.report is False
+
+
+def test_report_flag_marks_a_report():
+    vacuum_map = decode_map(_frame(protobuf.encode_bytes_field(5, _grid_message()), persisted=True))
+    assert vacuum_map.persisted is True
+    assert vacuum_map.report is True
 
 
 # ---------------------------------------------------------------------------
@@ -316,6 +339,33 @@ def test_decode_real_persisted_frame():
     assert vacuum_map.cleaned_area == pytest.approx(3.17, abs=0.01)
     assert len(vacuum_map.log) == 83
     assert [e.code for e in vacuum_map.log if e.key == "DT_WARNING_CODE"] == ["WARN_MM_LOWLIGHT"]
+    assert vacuum_map.report is True
+    assert vacuum_map.job_minutes == 3  # a 216 s job, docking included
+
+
+def test_decode_real_requested_frame():
+    # The reply to request_map() while docked, after a whole-home job whose
+    # end-of-job frame Home Assistant missed: the same saved map with that
+    # job's path and summary, but no event log and no report flag.
+    vacuum_map = decode_map(_fields(_fixture("sharkiq_requested_map_frame.b64")))
+    assert vacuum_map.persisted is True
+    assert vacuum_map.report is False
+    assert vacuum_map.map_id == "3CDBBC59"
+    assert [room.name for room in vacuum_map.rooms] == ["Bathroom. ", "Room", "Laundry Room", "Hallway"]
+    assert vacuum_map.job_started == 1790503168
+    assert vacuum_map.job_minutes == 33
+    assert vacuum_map.log == []
+    assert vacuum_map.clean_time == 33 * 60
+    assert len(vacuum_map.path) == 1671
+    assert vacuum_map.cleaned_area == pytest.approx(25.61, abs=0.01)
+    # A whole-home run: all but 3 of its 1671 path points land on cleaned cells.
+    grid = vacuum_map.grid
+    on_cleaned = sum(
+        grid.cell(int((p.x - grid.origin.x) / grid.resolution), int((p.y - grid.origin.y) / grid.resolution))
+        == MapGrid.CLEANED
+        for p in vacuum_map.path
+    )
+    assert on_cleaned == 1668
 
 
 @pytest.mark.parametrize("name", ["sharkiq_live_map_frame.b64", "sharkiq_persisted_map_frame.b64"])
@@ -379,6 +429,21 @@ def test_map_survives_json_round_trip(persisted_map):
     restored = VacuumMap.from_dict(json.loads(json.dumps(persisted_map.to_dict())))
     persisted_map.raw = {}
     assert restored == persisted_map
+
+
+def test_map_stored_before_report_existed_reads_as_a_report(persisted_map):
+    # Before request_map() only end-of-job reports were persisted.
+    stored = json.loads(json.dumps(persisted_map.to_dict()))
+    del stored["report"], stored["job_minutes"]
+    restored = VacuumMap.from_dict(stored)
+    assert restored.report is True
+    assert restored.job_minutes is None
+
+
+def test_requested_map_survives_json_round_trip():
+    requested = decode_map(_fields(_fixture("sharkiq_requested_map_frame.b64")))
+    restored = VacuumMap.from_dict(json.loads(json.dumps(requested.to_dict())))
+    assert (restored.report, restored.job_minutes) == (False, 33)
 
 
 def test_stored_map_still_builds_the_app_room_command(persisted_map):

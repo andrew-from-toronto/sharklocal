@@ -122,7 +122,8 @@ class VacuumMap:
     grid: MapGrid
     path: list[MapPoint]           # Cleaned path so far, ~1 point per 0.12 m
     poses: list[MapPose]           # Pose log with heading, ~1 pose per 0.22 m
-    persisted: bool                # True for the end-of-job frame
+    persisted: bool                # True for the saved map: the end-of-job frame or a requested one
+    report: bool                   # True for the end-of-job frame only (the one with the event log)
     map_id: str | None             # e.g. "3CDBBC59" — persisted only
     name: str | None               # persisted only
     dock: MapPose | None           # persisted only
@@ -130,6 +131,7 @@ class VacuumMap:
     features: list[MapFeature]     # persisted only: wall "edge" and "door" polylines
     log: list[VacuumLogEntry]      # persisted only: the robot's event log
     job_started: int | None        # Unix epoch seconds — persisted only
+    job_minutes: int | None        # whole minutes of the job, docking included — persisted only
     raw: dict
 
     @property
