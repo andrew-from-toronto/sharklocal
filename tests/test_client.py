@@ -605,6 +605,8 @@ async def test_stop_monitoring_cancels_task():
         ("set_recharge_resume", (False,), "recharge_resume_off"),
         ("set_evac_resume", (True,), "evac_resume_on"),
         ("set_evac_resume", (False,), "evac_resume_off"),
+        ("pause", (), "pause"),
+        ("edge_clean", (), "edge_clean"),
     ],
 )
 async def test_setting_actions_call_execute(method_name, args, expected_action):
@@ -613,6 +615,59 @@ async def test_setting_actions_call_execute(method_name, args, expected_action):
         mock_exec.return_value = True
         await getattr(client, method_name)(*args)
         mock_exec.assert_awaited_once_with(expected_action)
+
+
+@pytest.mark.parametrize(
+    "name, enabled, captured",
+    [
+        # The app's own Recharge & Resume / Evac & Resume commands.
+        ("recharge_resume", True, "OgJAAQ=="),
+        ("recharge_resume", False, "OgJAAg=="),
+        ("evac_resume", True, "OgI4AQ=="),
+        ("evac_resume", False, "OgI4Ag=="),
+    ],
+)
+async def test_toggle_writer_reproduces_the_app_captures(name, enabled, captured):
+    import base64
+
+    client = _make_vacuum_client_with_mocks()
+    client._mqtt.send = AsyncMock(return_value=True)
+    assert await client.set_toggle(name, enabled) is True
+    client._mqtt.send.assert_awaited_once_with(base64.b64decode(captured))
+
+
+async def test_settings_write_their_config_fields():
+    from sharklocal import protobuf
+
+    client = _make_vacuum_client_with_mocks()
+    client._mqtt.send = AsyncMock(return_value=True)
+    await client.set_toggle("do_not_disturb", True)
+    await client.set_carpet_detect(2)
+    await client.set_volume(7)
+    sent = [call.args[0] for call in client._mqtt.send.await_args_list]
+    assert sent == [
+        protobuf.encode_bytes_field(7, protobuf.encode_varint_field(18, 1)),
+        protobuf.encode_bytes_field(7, protobuf.encode_varint_field(15, 2)),
+        protobuf.encode_bytes_field(7, protobuf.encode_varint_field(2, 7)),
+    ]
+
+
+async def test_unknown_toggle_is_refused():
+    client = _make_vacuum_client_with_mocks()
+    with pytest.raises(ValueError, match="turbo"):
+        await client.set_toggle("turbo", True)
+
+
+def test_mapping_carries_the_new_commands():
+    import base64
+
+    from sharklocal.mappings import load_mqtt_mapping
+
+    actions = load_mqtt_mapping("sharkiq_v1").actions
+    assert base64.b64decode(actions["pause"].payload) == bytes([0x80, 0x01, 8])  # 16 = USR_CTR_PAUSE
+    assert base64.b64decode(actions["start_cleaning"].payload) == bytes([0x80, 0x01, 9])  # USR_CTR_RESUME
+    assert base64.b64decode(actions["edge_clean"].payload) == bytes([0x80, 0x01, 16])  # USR_CTR_ALONG_WALL
+    assert base64.b64decode(actions["explore"].payload) == bytes([0x80, 0x01, 38])  # USR_CTR_AUTO_EXPLORE
 
 
 async def test_set_suction_rejects_unknown_level():

@@ -70,3 +70,47 @@ def test_unpacked_errors_are_decoded():
 )
 def test_system_states_map_to_modes(state, mode):
     assert load_mqtt_mapping("sharkiq_v1").modes[state] == mode.value
+
+
+def _fixture_status(name: str):
+    mapping = load_mqtt_mapping("sharkiq_v1")
+    payload = base64.b64decode((FIXTURES / name).read_text().strip())
+    return _decode_sharkiq_protobuf_v1(payload, mapping.modes)
+
+
+def test_live_frame_mid_clean():
+    status = _fixture_status("sharkiq_live_map_frame.b64")
+    assert status.state == 6
+    assert status.mode == VacuumMode.CLEANING
+    assert status.charging is False
+    assert (status.fan_speed, status.brushroll_speed, status.side_brush_speed) == (82, 54, 44)
+    assert codes.RELOCATION_STATES[status.relocation] == "RS_SUCCESS"
+    # A dark basement: the live warning field reports low light.
+    assert codes.names(codes.WARNING_CODES, status.warnings) == ["WARN_LOW_LIGHT", "WARN_LOW_LIGHT"]
+
+
+def test_end_of_job_frame_agrees_with_its_own_log():
+    status = _fixture_status("sharkiq_persisted_map_frame.b64")
+    assert codes.SYSTEM_STATES[status.state] == "SYS_ST_CHARGING"
+    assert status.mode == VacuumMode.DOCKED
+    assert status.charging is True
+    # The live warning code and the event log's DT_WARNING_CODE name agree.
+    assert codes.names(codes.WARNING_CODES, status.warnings) == ["WARN_MM_LOWLIGHT"]
+    assert [e.code for e in status.map.log if e.key == "DT_WARNING_CODE"] == ["WARN_MM_LOWLIGHT"]
+
+
+def test_docked_and_full():
+    status = _fixture_status("sharkiq_status_frame.b64")
+    assert codes.SYSTEM_STATES[status.state] == "SYS_ST_BATTERY_FULL"
+    assert status.charging is False
+    assert status.battery_level == 100
+    assert status.temperature == 20
+    assert codes.WIFI_STATES[status.wifi_state] == "WIFI_CONNECTED"
+    assert status.fan_speed == 0
+
+
+def test_feature_toggles():
+    status = _decode(protobuf.encode_varint_field(43, 1) + protobuf.encode_varint_field(44, 2))
+    assert status.clean_edge is True
+    assert codes.CARPET_DETECT_MODES[status.carpet_detect] == "CD_AUTO"
+    assert _decode(protobuf.encode_varint_field(43, 2)).clean_edge is False

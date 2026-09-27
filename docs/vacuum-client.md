@@ -104,6 +104,10 @@ print(vacuum.via)   # "REST", "MQTT", or "NONE" depending on what responded
 | `set_evac_resume(enabled)` | *(not in REST mapping)* | `evac_resume_on` / `_off` (command) |
 | `clean_rooms(names, deep=False, vacuum_map=None)` | *(not in REST mapping)* | runtime-built payload, then `start_cleaning` |
 | `clean_spot(x, y, vacuum_map=None)` | *(not in REST mapping)* | runtime-built payload, then `start_cleaning` |
+| `pause()` | *(not in REST mapping)* | `pause` (command; `start_cleaning` resumes) |
+| `edge_clean()` | *(not in REST mapping)* | `edge_clean` (command) |
+| `set_toggle(name, enabled)` | *(not in REST mapping)* | runtime-built settings payload (`CONFIG_TOGGLES`) |
+| `set_carpet_detect(mode)`, `set_volume(n)` | *(not in REST mapping)* | runtime-built settings payload |
 
 ### Return Types
 
@@ -163,6 +167,12 @@ await vacuum.set_evac_resume(False)
 ```
 
 Recharge & Resume and Evac & Resume are read back from `VacuumStatus.recharge_resume` / `evac_resume`. The suction level is **not** reported in status — the robot echoes a change once and is then silent about it — so keep the last value you set if you need to display it.
+
+### More settings, pause and live faults
+
+The SharkIQ settings block (`PbConfig` in the app's schema) is written one field at a time with `set_config(field, value)`; `CONFIG_TOGGLES` names the on/off settings (`do_not_disturb`, `child_lock`, `silent_mode`, `clean_edge`, `carpet_boost`, `button_sounds`, `underglow_lights`, `continuous_cross_hatch`, `room_by_room`, plus the two resume settings, whose writes match the app's captured commands byte for byte). Which settings a given model honours is not known in advance; the robot only echoes a setting once, so keep what you set.
+
+`pause()` sends `USR_CTR_PAUSE`; `start_cleaning()` (`USR_CTR_RESUME`) resumes. Status frames report the faults and warnings active now in `VacuumStatus.errors` / `warnings`, named by `sharklocal.codes`.
 
 ### Room, Matrix and spot cleaning
 

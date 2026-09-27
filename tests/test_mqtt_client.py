@@ -125,10 +125,14 @@ def test_decode_sharkiq_mode_int(mode_int, expected_mode):
     assert result.mode == expected_mode
 
 
-def test_decode_sharkiq_charging_state_3_means_charging():
-    payload = _build_status_payload(6, 3, 80)
-    result = _decode_sharkiq_protobuf_v1(payload, _MODES)
-    assert result.charging is True
+def test_decode_sharkiq_charging_comes_from_the_system_state():
+    # Field 9.1 is the Wi-Fi state (3 = connected), which the robot reports
+    # while cleaning; it was once misread as "charging on dock".
+    cleaning = _decode_sharkiq_protobuf_v1(_build_status_payload(6, 3, 80), _MODES)
+    assert cleaning.charging is False
+    assert cleaning.wifi_state == 3
+    on_dock = _decode_sharkiq_protobuf_v1(_build_status_payload(13, 3, 80), _MODES)
+    assert on_dock.charging is True
 
 
 def test_decode_sharkiq_charging_state_0_not_charging():
@@ -157,7 +161,7 @@ def test_decode_sharkiq_battery_info_not_dict():
     with patch.object(protobuf, "decode_raw", return_value={4: 6, 9: b"\xff\xff"}):
         result = _decode_sharkiq_protobuf_v1(b"\x00", _MODES)
         assert result.battery_level is None
-        assert result.charging is None
+        assert result.charging is False  # cleaning, from the state
 
 
 def test_decode_sharkiq_raw_contains_protobuf_fields():
@@ -343,7 +347,7 @@ async def test_request_status_returns_decoded_status(mqtt_mapping):
     assert isinstance(result, VacuumStatus)
     assert result.mode == VacuumMode.CLEANING
     assert result.battery_level == 80
-    assert result.charging is True
+    assert result.charging is False
 
 
 # ---------------------------------------------------------------------------

@@ -78,13 +78,13 @@ def _decode_sharkiq_protobuf_v1(
     except ValueError:
         mode = VacuumMode.UNKNOWN
 
-    battery_info = raw.get(9, {})
-    battery_percent: Optional[int] = None
-    charging: Optional[bool] = None
-    if isinstance(battery_info, dict):
-        battery_percent = battery_info.get(8)
-        charging_state = battery_info.get(1, 0)
-        charging = charging_state == 3  # ChargingState.CHARGING_ON_DOCK
+    # Field 9 is device info. Its field 1 is the Wi-Fi state, not a charging
+    # state (it reads 3, WIFI_CONNECTED, while the robot cleans); charging is
+    # the system state SYS_ST_CHARGING.
+    device = _submessage(fields, 9)
+    battery_percent: Optional[int] = _first_int(device, 8)
+    charging: Optional[bool] = (mode_int == 13) if 4 in raw else None
+    base = _submessage(fields, 16)
 
     # Settings are reflected by presence: the field disappears when switched off.
     recharge_resume = 35 in raw
@@ -106,7 +106,52 @@ def _decode_sharkiq_protobuf_v1(
         map=decoded_map,
         errors=errors,
         warnings=warnings,
+        state=raw.get(4),
+        temperature=_first_int(device, 11),
+        wifi_state=_first_int(device, 1),
+        wifi_link_quality=_first_int(device, 2),
+        wifi_signal=_first_int(device, 3),
+        water_level=_first_int(device, 9),
+        dust_level=_first_int(device, 10),
+        ip_address=_first_text(device, 17),
+        fan_speed=_first_int(base, 3),
+        brushroll_speed=_first_int(base, 5),
+        side_brush_speed=_first_int(base, 6),
+        clean_edge=_toggle(raw.get(43)),
+        carpet_detect=raw.get(44),
+        relocation=raw.get(41),
     )
+
+
+def _submessage(fields: Dict[int, list], num: int) -> Dict[int, list]:
+    """The fields of a nested message, or an empty dict."""
+    value = fields.get(num, [None])[0]
+    if not isinstance(value, bytes):
+        return {}
+    try:
+        return protobuf.decode_fields(value)
+    except Exception:  # noqa: BLE001 - a malformed sub-message is just absent
+        return {}
+
+
+def _first_int(fields: Dict[int, list], num: int) -> Optional[int]:
+    value = fields.get(num, [None])[0]
+    return value if isinstance(value, int) else None
+
+
+def _first_text(fields: Dict[int, list], num: int) -> Optional[str]:
+    value = fields.get(num, [None])[0]
+    if not isinstance(value, bytes):
+        return None
+    try:
+        return value.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
+def _toggle(value: Any) -> Optional[bool]:
+    """A PbToggleT: 1 on, 2 off, anything else unknown."""
+    return {1: True, 2: False}.get(value)
 
 
 def _repeated_varints(values: list) -> List[int]:

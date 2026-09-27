@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
+from . import protobuf
 from .exceptions import ActionNotSupportedError, ConnectError, SharklocalError
 from .mappings import load_mqtt_mapping, load_rest_mapping
 from .models import (
@@ -19,6 +20,26 @@ from .models import (
 from .mqtt_client import MQTTVacuumClient
 from .rest_client import RESTVacuumClient
 from .vacuum_map import encode_room_selection, encode_spot_selection
+
+
+# On/off settings in the SharkIQ settings block (PbConfig), by field number,
+# from the app's protobuf schema. Written as PbToggleT: 1 on, 2 off. Field 8
+# (Recharge & Resume) and 7 (Evac & Resume) match the app captures exactly.
+CONFIG_TOGGLES: Dict[str, int] = {
+    "evac_resume": 7,
+    "recharge_resume": 8,
+    "room_by_room": 12,
+    "continuous_cross_hatch": 13,
+    "clean_edge": 14,
+    "do_not_disturb": 18,
+    "carpet_boost": 19,
+    "child_lock": 24,
+    "silent_mode": 25,
+    "underglow_lights": 26,
+    "button_sounds": 27,
+}
+CONFIG_VOLUME = 2
+CONFIG_CARPET_DETECT = 15
 
 
 class VacuumClient:
@@ -167,6 +188,38 @@ class VacuumClient:
     async def get_wifi_status(self) -> DeviceInfo:
         """Return Wi-Fi connection details including MAC address."""
         return await self._execute("get_wifi_status")
+
+    async def pause(self) -> bool:
+        """Pause the current job (resume it with :meth:`start_cleaning`)."""
+        return await self._execute("pause")
+
+    async def edge_clean(self) -> bool:
+        """Clean along the walls."""
+        return await self._execute("edge_clean")
+
+    async def set_config(self, field_num: int, value: int) -> bool:
+        """Write one field of the robot's settings block (``PbConfig``).
+
+        MQTT-only and SharkIQ-specific: the command is field 7 carrying the one
+        setting. :data:`CONFIG_TOGGLES` names the on/off settings; suction and
+        the resume settings have their own methods.
+        """
+        payload = protobuf.encode_bytes_field(7, protobuf.encode_varint_field(field_num, value))
+        return await self._send(payload)
+
+    async def set_toggle(self, name: str, enabled: bool) -> bool:
+        """Switch a named on/off setting (see :data:`CONFIG_TOGGLES`)."""
+        if name not in CONFIG_TOGGLES:
+            raise ValueError(f"Unknown setting {name!r}; known: {sorted(CONFIG_TOGGLES)}")
+        return await self.set_config(CONFIG_TOGGLES[name], 1 if enabled else 2)
+
+    async def set_carpet_detect(self, mode: int) -> bool:
+        """Set carpet detection (1 disabled, 2 automatic; codes.CARPET_DETECT_MODES)."""
+        return await self.set_config(CONFIG_CARPET_DETECT, mode)
+
+    async def set_volume(self, volume: int) -> bool:
+        """Set the robot's voice volume."""
+        return await self.set_config(CONFIG_VOLUME, volume)
 
     async def find_robot(self) -> bool:
         """Make the vacuum play its locate sound."""

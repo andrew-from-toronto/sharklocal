@@ -57,6 +57,22 @@ class VacuumStatus:
     # Codes active now (SharkIQ fields 5 and 6); names in sharklocal.codes.
     errors: Optional[List[int]] = None
     warnings: Optional[List[int]] = None
+    # SharkIQ device info (field 9), live motor speeds (field 16) and feature
+    # status, each None when the frame does not carry it.
+    state: Optional[int] = None  # system state (codes.SYSTEM_STATES)
+    temperature: Optional[int] = None  # degrees C
+    wifi_state: Optional[int] = None  # codes.WIFI_STATES
+    wifi_link_quality: Optional[int] = None
+    wifi_signal: Optional[int] = None
+    water_level: Optional[int] = None
+    dust_level: Optional[int] = None
+    ip_address: Optional[str] = None
+    fan_speed: Optional[int] = None  # suction motor, live
+    brushroll_speed: Optional[int] = None
+    side_brush_speed: Optional[int] = None
+    clean_edge: Optional[bool] = None  # CleanEdge (fan jet) enabled
+    carpet_detect: Optional[int] = None  # codes.CARPET_DETECT_MODES
+    relocation: Optional[int] = None  # codes.RELOCATION_STATES
 
     @property
     def is_cleaning(self) -> bool:

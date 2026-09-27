@@ -57,6 +57,21 @@ actions:
     type: command
     payload: "gAER"
 
+  # Field 16 is UserCtrlSignalT (sharklocal.codes-style names from the app's
+  # schema): 8 USR_CTR_PAUSE; start_cleaning above is 9 USR_CTR_RESUME, which
+  # also resumes a paused job; 16 USR_CTR_ALONG_WALL; 38 USR_CTR_AUTO_EXPLORE.
+  pause:
+    type: command
+    payload: "gAEI"
+
+  edge_clean:
+    type: command
+    payload: "gAEQ"
+
+  explore:
+    type: command
+    payload: "gAEm"
+
   # Field 25 = 104
   find_robot:
     type: command

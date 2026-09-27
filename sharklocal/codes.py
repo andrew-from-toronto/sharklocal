@@ -356,6 +356,42 @@ DOCK_EVENTS: Dict[int, str] = {
 }
 
 
+# Device info field 1.
+WIFI_STATES: Dict[int, str] = {
+    0: "WIFI_NONE",
+    1: "WIFI_CONFIGURING",
+    2: "WIFI_CONNECTING",
+    3: "WIFI_CONNECTED",
+    4: "WIFI_CONNECTED_INTERNET",
+    5: "WIFI_DRIVER_ERR",
+    6: "WIFI_UNKNOW_ERR",
+    7: "WIFI_UNCONNECTED",
+    8: "WIFI_CONFIG_TIMEOUT",
+    9: "WIFI_SSID_NOT_FOUND",
+    10: "WIFI_AUTH_FAILED",
+    11: "WIFI_NO_SERVICE",
+    12: "WIFI_NO_INTERNET",
+}
+
+
+# Status field 44 and config field 15.
+CARPET_DETECT_MODES: Dict[int, str] = {
+    0: "CD_NONE",
+    1: "CD_DISABLE_ALL",
+    2: "CD_AUTO",
+}
+
+
+# Status field 41.
+RELOCATION_STATES: Dict[int, str] = {
+    0: "RS_NONE",
+    1: "RS_RELOC",
+    2: "RS_FAIL",
+    3: "RS_SUCCESS",
+    4: "RS_UNRELOC",
+}
+
+
 def names(table: Dict[int, str], codes: Iterable[int]) -> List[str]:
     """Names for *codes*, keeping unknown numbers visible as ``UNKNOWN_<n>``."""
     return [table.get(code, f"UNKNOWN_{code}") for code in codes]
