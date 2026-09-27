@@ -336,6 +336,20 @@ def test_encode_room_selection_deep_matches_app_capture(persisted_map):
     assert encode_room_selection(persisted_map, ["Bathroom. "], deep=True) == expected
 
 
+def test_map_survives_json_round_trip(persisted_map):
+    restored = VacuumMap.from_dict(json.loads(json.dumps(persisted_map.to_dict())))
+    persisted_map.raw = {}
+    assert restored == persisted_map
+
+
+def test_stored_map_still_builds_the_app_room_command(persisted_map):
+    # The reason the map is stored at all: after a restart, room cleaning must
+    # send exactly what the app sends, from the stored copy.
+    restored = VacuumMap.from_dict(json.loads(json.dumps(persisted_map.to_dict())))
+    expected = _fixture("sharkiq_cmd_room_clean_matrix.b64")
+    assert encode_room_selection(restored, ["Bathroom. "], deep=True) == expected
+
+
 def test_encode_room_selection_lists_every_chosen_room(persisted_map):
     payload = encode_room_selection(persisted_map, ["Bathroom. ", "Hallway"])
     selection = _fields(_fields(payload)[41][0])

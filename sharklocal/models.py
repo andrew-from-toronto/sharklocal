@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import base64
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -181,6 +182,62 @@ class VacuumMap:
         if self.cleaned_cells is None:
             return None
         return self.cleaned_cells * self.grid.resolution**2
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return a JSON-serialisable form of the map, for storage.
+
+        The persisted map arrives only when the robot docks, but room and spot
+        cleaning need its room definition at any time — so a caller that
+        restarts wants to keep it. Byte rasters are base64-encoded and ``raw``
+        is dropped. :meth:`from_dict` reverses this.
+        """
+        data = asdict(self)
+        data.pop("raw", None)
+        grid = data["grid"]
+        grid["cells"] = base64.b64encode(self.grid.cells).decode("ascii")
+        if self.grid.room_ids is not None:
+            grid["room_ids"] = base64.b64encode(self.grid.room_ids).decode("ascii")
+        return data
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "VacuumMap":
+        """Rebuild a map from :meth:`to_dict` output."""
+        g = data["grid"]
+        grid = MapGrid(
+            resolution=g["resolution"],
+            width=g["width"],
+            height=g["height"],
+            origin=MapPoint(**g["origin"]),
+            cells=base64.b64decode(g["cells"]),
+            room_ids=base64.b64decode(g["room_ids"]) if g.get("room_ids") else None,
+        )
+        dock = data.get("dock")
+        return cls(
+            grid=grid,
+            path=[MapPoint(**p) for p in data.get("path", [])],
+            poses=[MapPose(**p) for p in data.get("poses", [])],
+            persisted=data.get("persisted", False),
+            map_id=data.get("map_id"),
+            name=data.get("name"),
+            dock=MapPose(**dock) if dock else None,
+            rooms=[
+                MapRoom(
+                    name=r["name"],
+                    polygon=[MapPoint(**p) for p in r["polygon"]],
+                    selected=r.get("selected", False),
+                    coverage=r.get("coverage"),
+                )
+                for r in data.get("rooms", [])
+            ],
+            features=[
+                MapFeature(kind=f["kind"], points=[MapPoint(**p) for p in f["points"]])
+                for f in data.get("features", [])
+            ],
+            log=[VacuumLogEntry(**e) for e in data.get("log", [])],
+            job_started=data.get("job_started"),
+            job_duration=data.get("job_duration"),
+            cleaned_cells=data.get("cleaned_cells"),
+        )
 
 
 @dataclass

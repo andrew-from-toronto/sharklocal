@@ -137,6 +137,8 @@ class VacuumMap:
 
 All coordinates are metres in the map frame; headings are radians, `0` along +x, anticlockwise positive. Convert to grid cells with `col = (x - grid.origin.x) / grid.resolution` and `row = (y - grid.origin.y) / grid.resolution`; row 0 is the bottom of the map.
 
+The persisted map is only published when the robot docks, yet room and spot cleaning need it at any time. `map.to_dict()` returns a JSON-serialisable form (rasters base64-encoded, `raw` dropped) and `VacuumMap.from_dict(data)` rebuilds it, so a caller can store the latest persisted map and still clean rooms after a restart.
+
 ### MapGrid
 
 ```python
