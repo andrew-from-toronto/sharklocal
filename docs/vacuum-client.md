@@ -178,6 +178,8 @@ The SharkIQ settings block (`PbConfig` in the app's schema) is written one field
 
 `sharklocal.compat.RobotProfile(model)` answers what the SharkClean app would show for a robot, from the cloud model string (`oem_model`, e.g. `RV3000-001D5F7F`): its family and classification, and features such as `has_auto_empty`, `do_not_disturb`, `has_volume`, `has_pin_drop`, `has_ultra_clean`, `has_underglow_lights` or `has_carpet_boost`. It is a port of the app's own rules and model table (SharkClean 6.27.0). The model is not reported over local MQTT, so it has to be supplied; a string the table lacks (retail SKUs such as `RV2610BFCA` are not cloud model strings) gives `None` for family-based features rather than a guess.
 
+For configuration, every model falls into one of seven robot types (`compat.ROBOT_TYPES`: `lidar`, `lidar_carpet`, `rv3000`, `spot_lidar`, `map`, `air`, `basic`), and `Capabilities(robot_type, self_empty_dock, clean_edge)` answers the same features as plain booleans; the two hardware extras vary within a type, so they are asked rather than derived. Across all 611 models in the table, a model's type plus its two extras gives exactly the per-model answers (`capabilities_for_model` does the lookup for a known model string).
+
 ### Room, Matrix and spot cleaning
 
 ```python

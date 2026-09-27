@@ -906,3 +906,111 @@ class RobotProfile:
     @property
     def has_carpet_detect(self) -> bool:
         return self.is_opp
+
+
+# ---------------------------------------------------------------------------
+# Robot types: the few groups every model falls into, for easy configuration
+# ---------------------------------------------------------------------------
+
+#: Robot types, in the order a picker should list them.
+ROBOT_TYPES = ("lidar", "lidar_carpet", "rv3000", "spot_lidar", "map", "air", "basic")
+
+
+@dataclass(frozen=True)
+class Capabilities:
+    """What a robot of one type offers, as plain yes/no answers.
+
+    The two hardware extras that vary within a type - a self-emptying dock and
+    CleanEdge air jets - are asked separately.
+    """
+
+    robot_type: str
+    self_empty_dock: bool
+    clean_edge: bool
+
+    @property
+    def _lidar(self) -> bool:
+        return self.robot_type in ("lidar", "lidar_carpet", "rv3000", "spot_lidar")
+
+    @property
+    def has_map(self) -> bool:
+        return self.robot_type not in ("air", "basic")
+
+    @property
+    def has_rooms(self) -> bool:
+        return self.has_map
+
+    @property
+    def has_explore(self) -> bool:
+        return self._lidar
+
+    @property
+    def has_pin_drop(self) -> bool:
+        return self._lidar and self.robot_type != "spot_lidar"
+
+    @property
+    def has_ultra_clean(self) -> bool:
+        return self._lidar and self.robot_type not in ("spot_lidar", "lidar_carpet")
+
+    @property
+    def has_recharge_resume(self) -> bool:
+        return self.has_map
+
+    @property
+    def has_auto_empty(self) -> bool:
+        return self.self_empty_dock
+
+    @property
+    def has_fan_jet(self) -> bool:
+        return self.clean_edge
+
+    @property
+    def do_not_disturb(self) -> bool:
+        return self.robot_type != "basic"
+
+    @property
+    def has_volume(self) -> bool:
+        return self.robot_type != "basic"
+
+    @property
+    def has_underglow_lights(self) -> bool:
+        return self.robot_type == "rv3000"
+
+    @property
+    def has_button_sounds(self) -> bool:
+        return self.robot_type == "rv3000"
+
+    @property
+    def has_carpet_boost(self) -> bool:
+        return self.robot_type == "lidar_carpet"
+
+    @property
+    def has_carpet_detect(self) -> bool:
+        return self.robot_type == "lidar_carpet"
+
+
+def robot_type(profile: RobotProfile) -> Optional[str]:
+    """The robot type a known model belongs to, or None for a model the table lacks."""
+    if profile.is_rv3000:
+        return "rv3000"
+    if profile.is_opp:
+        return "lidar_carpet"
+    if profile.is_spot_lidar:
+        return "spot_lidar"
+    if profile.family in ("MesaAir", "ValleyAir"):
+        return "air"  # camera robots without a saved map
+    return {
+        "Three60": "lidar",
+        "LaserBot": "lidar",
+        "MapBot": "map",
+        "RandomBounce": "basic",
+    }.get(profile.classification or "")
+
+
+def capabilities_for_model(model: str) -> Optional[Capabilities]:
+    """Capabilities straight from a cloud model string, when the table knows it."""
+    profile = RobotProfile(model)
+    kind = robot_type(profile)
+    if kind is None:
+        return None
+    return Capabilities(kind, bool(profile.has_auto_empty), profile.has_fan_jet)

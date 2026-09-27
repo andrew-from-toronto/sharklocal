@@ -65,3 +65,52 @@ def test_a_model_missing_from_the_table_is_unknown_not_false():
 
 def test_a_malformed_mask_is_ignored():
     assert RobotProfile("RV3000-ZZZZZZZZ")._mask("AED") is None
+
+
+from sharklocal.compat import ROBOT_TYPES, Capabilities, capabilities_for_model, robot_type
+
+
+@pytest.mark.parametrize(
+    "model, kind",
+    [
+        ("RV3000-001D5F7F", "rv3000"),
+        ("RV2500HOP", "lidar_carpet"),
+        ("RV2100AB", "spot_lidar"),
+        ("RV1000A", "map"),
+        ("RV750", "basic"),
+        ("RV1100AA", "air"),
+        ("RV2000DX", "lidar"),
+        ("RV2610BFCA", None),
+    ],
+)
+def test_every_model_falls_into_one_robot_type(model, kind):
+    assert robot_type(RobotProfile(model)) == kind
+
+
+def test_every_table_model_has_a_type():
+    assert {robot_type(RobotProfile(m)) for m in MODEL_FAMILIES} <= set(ROBOT_TYPES)
+
+
+@pytest.mark.parametrize("model", sorted(MODEL_FAMILIES))
+def test_a_robot_type_answers_like_its_models(model):
+    # The simple configuration must agree with the app's per-model rules on
+    # every feature the app decides for that model.
+    profile = RobotProfile(model)
+    caps = capabilities_for_model(model)
+    for feature in (
+        "has_map", "has_explore", "has_pin_drop", "has_ultra_clean", "has_recharge_resume",
+        "has_auto_empty", "has_fan_jet", "do_not_disturb", "has_volume",
+        "has_underglow_lights", "has_button_sounds", "has_carpet_boost", "has_carpet_detect",
+    ):
+        assert getattr(caps, feature) == bool(getattr(profile, feature)), (model, feature)
+
+
+def test_unknown_model_has_no_capabilities():
+    assert capabilities_for_model("RV2610BFCA") is None
+
+
+def test_extras_are_asked_not_derived():
+    caps = Capabilities("lidar", self_empty_dock=True, clean_edge=False)
+    assert caps.has_auto_empty and not caps.has_fan_jet
+    assert caps.has_pin_drop and caps.has_ultra_clean and caps.do_not_disturb and caps.has_volume
+    assert not (caps.has_underglow_lights or caps.has_carpet_boost)
