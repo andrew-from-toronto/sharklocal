@@ -102,7 +102,11 @@ class RESTVacuumClient:
                 except Exception:
                     return True
 
-        except aiohttp.ClientConnectorError as exc:
+        except (aiohttp.ClientConnectionError, TimeoutError) as exc:
+            # Not just a refused connection: a robot that drops packets (seen
+            # during the nightly network restart) times out instead, and that
+            # is just as unreachable. Anything else escaping here skips the
+            # MQTT fallback and fails the caller's setup outright.
             raise ConnectError(
                 f"Cannot connect to vacuum at {self.host}:{self.mapping.port}"
             ) from exc

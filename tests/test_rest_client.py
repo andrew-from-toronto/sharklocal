@@ -222,6 +222,30 @@ async def test_call_connect_error_on_connector_error(rest_mapping):
             await client.call("get_status")
 
 
+@pytest.mark.parametrize(
+    "error",
+    [
+        aiohttp.ConnectionTimeoutError("Connection timeout to host"),
+        aiohttp.ServerDisconnectedError(),
+        TimeoutError(),
+    ],
+    ids=["connection-timeout", "server-disconnected", "total-timeout"],
+)
+async def test_call_connect_error_on_unreachable_host(rest_mapping, error):
+    client = RESTVacuumClient("host", rest_mapping)
+    with patch.object(client, "_get_session") as mock_get:
+        session = AsyncMock()
+        session.request = MagicMock(
+            return_value=MagicMock(
+                __aenter__=AsyncMock(side_effect=error),
+                __aexit__=AsyncMock(return_value=False),
+            )
+        )
+        mock_get.return_value = session
+        with pytest.raises(ConnectError):
+            await client.call("get_status")
+
+
 # ---------------------------------------------------------------------------
 # call() — CommandError on HTTP error
 # ---------------------------------------------------------------------------
