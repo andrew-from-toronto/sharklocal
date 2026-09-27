@@ -114,3 +114,19 @@ def test_feature_toggles():
     assert status.clean_edge is True
     assert codes.CARPET_DETECT_MODES[status.carpet_detect] == "CD_AUTO"
     assert _decode(protobuf.encode_varint_field(43, 2)).clean_edge is False
+
+
+def test_mid_job_log_entries_are_decoded():
+    # A real frame from a spot clean: field 34 streams event-log entries.
+    status = _fixture_status("sharkiq_diagnose_frame.b64")
+    assert status.log_entries
+    assert all(e.key.startswith("DT_") for e in status.log_entries)
+    assert any(e.key == "DT_WATER_TANK" for e in status.log_entries)
+
+
+def test_frames_without_log_entries_say_so():
+    assert _fixture_status("sharkiq_status_frame.b64").log_entries is None
+    garbled = protobuf.encode_bytes_field(34, b"\xff\xff") + protobuf.encode_varint_field(34, 1)
+    assert _decode(garbled).log_entries == []
+    not_a_list = protobuf.encode_bytes_field(34, protobuf.encode_bytes_field(5, b'{"key": "x"}'))
+    assert _decode(not_a_list).log_entries == []

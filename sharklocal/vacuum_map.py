@@ -220,9 +220,20 @@ def _decode_log(data: Optional[bytes]) -> List[VacuumLogEntry]:
     text = _first(_fields(inner), 6)
     if not isinstance(text, bytes):
         return []
+    return parse_log_json(text)
+
+
+def parse_log_json(text: bytes) -> List[VacuumLogEntry]:
+    """Parse the robot's JSON log format: ``[{"key", "time": "<epoch>s", "code"}]``.
+
+    The persisted map carries the job's whole log this way; status frames can
+    carry entries mid-job too (field 34).
+    """
     try:
         entries = json.loads(text.decode("utf-8", errors="replace"))
     except ValueError:
+        return []
+    if not isinstance(entries, list):
         return []
     log: List[VacuumLogEntry] = []
     for entry in entries:

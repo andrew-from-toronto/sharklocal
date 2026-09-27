@@ -120,7 +120,26 @@ def _decode_sharkiq_protobuf_v1(
         clean_edge=_toggle(raw.get(43)),
         carpet_detect=raw.get(44),
         relocation=raw.get(41),
+        log_entries=_diagnose_entries(fields.get(34)),
     )
+
+
+def _diagnose_entries(values: Optional[list]) -> Optional[list]:
+    """Field 34 (repeated PbDiagnoseInfo): its field 5 holds JSON log entries."""
+    if not values:
+        return None
+    entries = []
+    for value in values:
+        if not isinstance(value, bytes):
+            continue
+        try:
+            info = protobuf.decode_fields(value)
+        except Exception:  # noqa: BLE001 - a malformed record is skipped
+            continue
+        for text in info.get(5, []):
+            if isinstance(text, bytes):
+                entries.extend(vacuum_map.parse_log_json(text))
+    return entries
 
 
 def _submessage(fields: Dict[int, list], num: int) -> Dict[int, list]:

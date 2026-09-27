@@ -73,6 +73,8 @@ class VacuumStatus:
     clean_edge: Optional[bool] = None  # CleanEdge (fan jet) enabled
     carpet_detect: Optional[int] = None  # codes.CARPET_DETECT_MODES
     relocation: Optional[int] = None  # codes.RELOCATION_STATES
+    # Event-log entries streamed mid-job (field 34), when the frame has any.
+    log_entries: Optional[List["VacuumLogEntry"]] = None
 
     @property
     def is_cleaning(self) -> bool:
