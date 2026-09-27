@@ -105,6 +105,18 @@ async def test_make_connector_https_with_ssl_verify(rest_mapping):
     await connector.close()
 
 
+async def test_ssl_context_is_built_at_construction_not_in_the_event_loop(rest_mapping):
+    rest_mapping.transport = "https"
+    rest_mapping.verify_ssl = False
+    with patch("sharklocal.rest_client.ssl.create_default_context", wraps=ssl.create_default_context) as create:
+        client = RESTVacuumClient("host", rest_mapping)
+        assert create.call_count == 1
+        connector = client._make_connector()
+        assert create.call_count == 1
+    assert client._ssl_context.verify_mode == ssl.CERT_NONE
+    await connector.close()
+
+
 # ---------------------------------------------------------------------------
 # _get_session()
 # ---------------------------------------------------------------------------
