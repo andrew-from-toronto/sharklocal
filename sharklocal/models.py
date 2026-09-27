@@ -24,6 +24,8 @@ class VacuumMode(str, Enum):
     DOCKED = "docked"
     IDLE = "idle"  # Powered on but not cleaning and not on the charging dock
     EXPLORING = "exploring"  # Mapping/exploration run in progress
+    PAUSED = "paused"  # A job paused mid-way
+    ERROR = "error"  # Stopped by a fault
 
 
 class SuctionLevel(str, Enum):
@@ -52,6 +54,9 @@ class VacuumStatus:
     recharge_resume: Optional[bool] = None
     evac_resume: Optional[bool] = None
     map: Optional["VacuumMap"] = None
+    # Codes active now (SharkIQ fields 5 and 6); names in sharklocal.codes.
+    errors: Optional[List[int]] = None
+    warnings: Optional[List[int]] = None
 
     @property
     def is_cleaning(self) -> bool:

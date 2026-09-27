@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from .exceptions import ActionNotSupportedError, CommandError, ConnectError, DecoderError
 from .mappings.base import MQTTMappingConfig
@@ -43,7 +43,9 @@ def _decode_sharkiq_protobuf_v1(
 
     Field reference:
 
-    * Field 4  — ``OperatingMode`` integer
+    * Field 4  — system state (``SysStateT``, see :mod:`sharklocal.codes`)
+    * Field 5  — error codes active now (repeated ``ErrorCodeT``)
+    * Field 6  — warning codes active now (repeated ``WarningCodeT``)
     * Field 9  — ``BatteryInfo`` nested message
 
       * Field 1 — ``ChargingState`` (3 = ``CHARGING_ON_DOCK``)
@@ -66,6 +68,8 @@ def _decode_sharkiq_protobuf_v1(
         payload = protobuf.remove_field(payload, vacuum_map.FIELD_MAP)
 
     raw = protobuf.decode_raw(payload)
+    errors = _repeated_varints(fields.get(5, []))
+    warnings = _repeated_varints(fields.get(6, []))
 
     mode_int = raw.get(4, 0)
     mode_str = modes.get(mode_int, "unknown")
@@ -100,7 +104,23 @@ def _decode_sharkiq_protobuf_v1(
         recharge_resume=recharge_resume,
         evac_resume=evac_resume,
         map=decoded_map,
+        errors=errors,
+        warnings=warnings,
     )
+
+
+def _repeated_varints(values: list) -> List[int]:
+    """Values of a repeated varint field, packed (one bytes blob) or not."""
+    out: List[int] = []
+    for value in values:
+        if isinstance(value, int):
+            out.append(value)
+            continue
+        pos = 0
+        while pos < len(value):
+            number, pos = protobuf._decode_varint(value, pos)
+            out.append(number)
+    return out
 
 
 class MQTTVacuumClient:

@@ -25,13 +25,13 @@ from sharklocal.models import (
 
 
 def test_vacuum_mode_all_values():
-    expected = {"unknown", "cleaning", "returning_to_dock", "docking", "docked", "idle", "exploring"}
+    expected = {"unknown", "cleaning", "returning_to_dock", "docking", "docked", "idle", "exploring", "paused", "error"}
     actual = {m.value for m in VacuumMode}
     assert actual == expected
 
 
 def test_vacuum_mode_count():
-    assert len(VacuumMode) == 7
+    assert len(VacuumMode) == 9
 
 
 def test_vacuum_mode_is_str_enum():

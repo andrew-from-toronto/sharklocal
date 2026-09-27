@@ -33,6 +33,8 @@ class VacuumMode(str, Enum):
     DOCKED            = "docked"
     IDLE              = "idle"       # Stopped and off the dock (mode=ready, charging=unconnected)
     EXPLORING         = "exploring"  # Mapping/exploration run in progress
+    PAUSED            = "paused"     # A job paused mid-way (SharkIQ MQTT)
+    ERROR             = "error"      # Stopped by a fault (SharkIQ MQTT)
 ```
 
 The REST API does not expose `docked` directly. `DOCKED` is derived automatically from two fields:
@@ -106,6 +108,9 @@ map: VacuumMap | None         # Only on map-bearing frames
 The suction level is deliberately absent: the robot does not report it in status, only echoes it once when it changes.
 
 ---
+
+
+`errors` and `warnings` are the codes active right now (SharkIQ status fields 5 and 6, repeated). They are numbers; `sharklocal.codes` names them (`codes.names(codes.ERROR_CODES, status.errors)`), with the robot's own enum names — the same names its event log writes as strings (`WARN_MM_LOWLIGHT`, `DE_USR_CTR_DOCK`). `codes.SYSTEM_STATES` names the state behind `mode` (field 4) and `codes.DOCK_EVENTS` the dock reasons.
 
 ## VacuumMap
 
