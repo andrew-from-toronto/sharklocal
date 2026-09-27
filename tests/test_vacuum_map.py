@@ -305,6 +305,15 @@ def test_decode_log_tolerates_missing_or_invalid_parts():
 # ---------------------------------------------------------------------------
 
 
+def test_empty_grid_at_job_start_is_no_map():
+    # The first live frame of a job carries a grid with no resolution, size or
+    # cells; drawing it divided by zero.
+    fields = _fields(_fixture("sharkiq_empty_live_map_frame.b64"))
+    assert 7 in fields
+    assert has_map(fields) is False
+    assert decode_map(fields) is None
+
+
 def test_decode_real_live_frame():
     vacuum_map = decode_map(_fields(_fixture("sharkiq_live_map_frame.b64")))
     assert vacuum_map.persisted is False

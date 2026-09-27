@@ -72,7 +72,17 @@ def _text(value: Optional[bytes]) -> Optional[str]:
 def has_map(fields: Dict[int, List[Any]]) -> bool:
     """``True`` if a decoded status frame carries an occupancy grid."""
     blob = _first(fields, FIELD_MAP)
-    return isinstance(blob, bytes) and 5 in _fields(blob)
+    return isinstance(blob, bytes) and _drawable(_first(_fields(blob), 5))
+
+
+def _drawable(grid_blob: Any) -> bool:
+    """A grid with cells to draw. A job opens with a live frame whose grid is
+    empty (no resolution, size or cells, measured on a Matrix clean): that
+    says the job's map starts afresh, not that there is one to draw."""
+    if not isinstance(grid_blob, bytes):
+        return False
+    g = _fields(grid_blob)
+    return bool(_first(g, 6)) and bool(_first(g, 3)) and bool(_first(g, 4)) and 1 in g
 
 
 def decode_map(fields: Dict[int, List[Any]]) -> Optional[VacuumMap]:
@@ -89,7 +99,7 @@ def decode_map(fields: Dict[int, List[Any]]) -> Optional[VacuumMap]:
     if not isinstance(blob, bytes):
         return None
     m = _fields(blob)
-    if 5 not in m:
+    if not _drawable(_first(m, 5)):
         return None
 
     grid = _decode_grid(m[5][0])
