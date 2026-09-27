@@ -231,7 +231,7 @@ def _grid(room_ids=None) -> MapGrid:
 @pytest.mark.parametrize(
     "value, wall, floor",
     [
-        (0x00, False, False),  # void
+        (0x00, False, True),  # cleaned floor
         (0x0A, False, True),  # floor
         (0x0F, False, True),  # floor
         (0x19, False, True),  # floor
@@ -260,7 +260,13 @@ def test_map_grid_room_id_lookup():
 
 def test_map_grid_constants():
     assert MapGrid.UNKNOWN == 0x4B
-    assert MapGrid.VOID == 0x00
+    assert MapGrid.CLEANED == 0x00
+
+
+def test_map_grid_counts_cleaned_cells():
+    assert MapGrid.is_cleaned(0x00) is True
+    assert MapGrid.is_cleaned(0x0F) is False
+    assert _grid().cleaned_cells == 1
 
 
 # ---------------------------------------------------------------------------
@@ -277,7 +283,7 @@ def test_vacuum_map_defaults():
     assert vacuum_map.features == []
     assert vacuum_map.log == []
     assert vacuum_map.robot is None
-    assert vacuum_map.cleaned_area is None
+    assert vacuum_map.clean_time is None
 
 
 def test_vacuum_map_robot_is_last_pose():
@@ -285,9 +291,20 @@ def test_vacuum_map_robot_is_last_pose():
     assert VacuumMap(grid=_grid(), poses=poses).robot == poses[-1]
 
 
-def test_vacuum_map_cleaned_area_uses_grid_resolution():
-    vacuum_map = VacuumMap(grid=_grid(), cleaned_cells=100)
-    assert vacuum_map.cleaned_area == pytest.approx(100 * 0.06 * 0.06)
+def test_vacuum_map_cleaned_area_counts_cleaned_cells():
+    # _grid() has one cleaned cell.
+    assert VacuumMap(grid=_grid()).cleaned_area == pytest.approx(0.06 * 0.06)
+
+
+def test_vacuum_map_clean_time_sums_the_logged_clean_times():
+    log = [
+        VacuumLogEntry("DT_NORMAL_CLEAN_TIME", 0, "28"),
+        VacuumLogEntry("DT_FOLLOW_CLEAN_TIME", 0, "73"),
+        VacuumLogEntry("DT_ESCAPE_CLEAN_TIME", 0, "0"),
+        VacuumLogEntry("DT_NORMAL_DOCK_TIME", 0, "42"),
+        VacuumLogEntry("DT_WARNING_CODE", 0, "WARN_MM_LOWLIGHT"),
+    ]
+    assert VacuumMap(grid=_grid(), log=log).clean_time == 101
 
 
 def test_map_room_and_feature_and_log_entry_fields():

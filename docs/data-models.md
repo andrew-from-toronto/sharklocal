@@ -125,14 +125,14 @@ class VacuumMap:
     features: list[MapFeature]     # persisted only: wall "edge" and "door" polylines
     log: list[VacuumLogEntry]      # persisted only: the robot's event log
     job_started: int | None        # Unix epoch seconds — persisted only
-    job_duration: int | None       # seconds — persisted only
-    cleaned_cells: int | None      # persisted only
     raw: dict
 
     @property
     def robot(self) -> MapPose | None: ...       # last pose, i.e. where the robot is
     @property
-    def cleaned_area(self) -> float | None: ...  # m², from cleaned_cells × resolution²
+    def cleaned_area(self) -> float: ...         # m² covered by the job: grid.cleaned_cells × resolution²
+    @property
+    def clean_time(self) -> int | None: ...      # s spent cleaning, summed from the log's DT_*_CLEAN_TIME entries
 ```
 
 All coordinates are metres in the map frame; headings are radians, `0` along +x, anticlockwise positive. Convert to grid cells with `col = (x - grid.origin.x) / grid.resolution` and `row = (y - grid.origin.y) / grid.resolution`; row 0 is the bottom of the map.
@@ -152,12 +152,16 @@ class MapGrid:
     room_ids: bytes | None   # persisted only: room segment id per cell, 0 = unassigned
 
     UNKNOWN = 0x4B           # unexplored
-    VOID = 0x00
+    CLEANED = 0x00           # floor covered by the job
 
     @staticmethod
-    def is_wall(value: int) -> bool: ...   # 0x50 and above
+    def is_wall(value: int) -> bool: ...     # 0x50 and above
     @staticmethod
-    def is_floor(value: int) -> bool: ...  # explored free floor
+    def is_floor(value: int) -> bool: ...    # explored free floor, cleaned or not
+    @staticmethod
+    def is_cleaned(value: int) -> bool: ...  # CLEANED
+    @property
+    def cleaned_cells(self) -> int: ...
     def cell(self, col: int, row: int) -> int: ...
     def room_id(self, col: int, row: int) -> int | None: ...
 ```

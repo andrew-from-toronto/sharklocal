@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from sharklocal import protobuf
-from sharklocal.models import MapPoint, MapPose, MapRoom, VacuumMap
+from sharklocal.models import MapGrid, MapPoint, MapPose, MapRoom, VacuumMap
 from sharklocal.vacuum_map import (
     FIELD_MAP,
     FIELD_PERSISTED_FLAG,
@@ -130,7 +130,7 @@ def test_decode_live_frame_defaults():
     assert vacuum_map.rooms == []
     assert vacuum_map.features == []
     assert vacuum_map.log == []
-    assert vacuum_map.cleaned_area is None
+    assert vacuum_map.clean_time is None
     assert vacuum_map.map_id is None
     assert vacuum_map.name is None
 
@@ -227,7 +227,7 @@ def test_decode_room_ids_only_when_sizes_match():
     assert decode_map(_frame(protobuf.encode_bytes_field(5, grid) + no_raster)).grid.room_ids is None
 
 
-def test_decode_job_stats_and_cleaned_area():
+def test_decode_job_start_only():
     stats = (
         protobuf.encode_varint_field(1, 1789867008)
         + protobuf.encode_varint_field(3, 335)
@@ -236,9 +236,7 @@ def test_decode_job_stats_and_cleaned_area():
     fields = protobuf.encode_bytes_field(5, _grid_message()) + protobuf.encode_bytes_field(11, stats)
     vacuum_map = decode_map(_frame(fields))
     assert vacuum_map.job_started == 1789867008
-    assert vacuum_map.job_duration == 335
-    assert vacuum_map.cleaned_cells == 100
-    assert vacuum_map.cleaned_area == pytest.approx(100 * 0.06 * 0.06)
+    assert not hasattr(vacuum_map, "job_duration")
 
 
 # ---------------------------------------------------------------------------
@@ -311,10 +309,23 @@ def test_decode_real_persisted_frame():
     assert vacuum_map.dock.x == pytest.approx(-0.52, abs=0.01)
     assert len(vacuum_map.grid.room_ids) == len(vacuum_map.grid.cells)
     assert set(vacuum_map.grid.room_ids) == {0, 1, 2, 3}
-    assert vacuum_map.job_duration == 335
-    assert vacuum_map.cleaned_area == pytest.approx(14.2, abs=0.1)
+    # The robot's log says 28 s normal + 73 s wall-follow cleaning.
+    assert vacuum_map.clean_time == 101
+    assert vacuum_map.cleaned_area == pytest.approx(3.17, abs=0.01)
     assert len(vacuum_map.log) == 83
     assert [e.code for e in vacuum_map.log if e.key == "DT_WARNING_CODE"] == ["WARN_MM_LOWLIGHT"]
+
+
+@pytest.mark.parametrize("name", ["sharkiq_live_map_frame.b64", "sharkiq_persisted_map_frame.b64"])
+def test_cleaned_cells_are_where_the_robot_went(name):
+    # The evidence for CLEANED = 0x00: every point of the cleaned path, in
+    # every captured frame, lands on a cell of that value.
+    vacuum_map = decode_map(_fields(_fixture(name)))
+    grid = vacuum_map.grid
+    for point in vacuum_map.path:
+        col = int((point.x - grid.origin.x) / grid.resolution)
+        row = int((point.y - grid.origin.y) / grid.resolution)
+        assert grid.cell(col, row) == MapGrid.CLEANED
 
 
 # ---------------------------------------------------------------------------

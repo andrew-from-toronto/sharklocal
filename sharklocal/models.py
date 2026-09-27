@@ -94,9 +94,11 @@ class MapGrid:
     cells: bytes
     room_ids: Optional[bytes] = None
 
-    # Cell values observed in SharkIQ grids.
+    # Cell values observed in SharkIQ grids. ``CLEANED`` marks floor covered
+    # by the current (or, on a persisted map, the last) job: every point of
+    # the cleaned path lands on one, in every captured frame.
     UNKNOWN = 0x4B
-    VOID = 0x00
+    CLEANED = 0x00
 
     @staticmethod
     def is_wall(value: int) -> bool:
@@ -105,8 +107,18 @@ class MapGrid:
 
     @staticmethod
     def is_floor(value: int) -> bool:
-        """``True`` for free-floor cells (explored, not wall, not void)."""
-        return 0 < value < 0x4B
+        """``True`` for free-floor cells (explored, not wall), cleaned or not."""
+        return value < 0x4B
+
+    @staticmethod
+    def is_cleaned(value: int) -> bool:
+        """``True`` for floor covered by the job."""
+        return value == MapGrid.CLEANED
+
+    @property
+    def cleaned_cells(self) -> int:
+        """Number of cells covered by the job."""
+        return self.cells.count(MapGrid.CLEANED)
 
     def cell(self, col: int, row: int) -> int:
         """Return the occupancy value at ``(col, row)``."""
@@ -167,8 +179,6 @@ class VacuumMap:
     features: List[MapFeature] = field(default_factory=list)
     log: List[VacuumLogEntry] = field(default_factory=list)
     job_started: Optional[int] = None  # Unix epoch seconds
-    job_duration: Optional[int] = None  # seconds
-    cleaned_cells: Optional[int] = None
     raw: Dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -177,11 +187,24 @@ class VacuumMap:
         return self.poses[-1] if self.poses else None
 
     @property
-    def cleaned_area(self) -> Optional[float]:
-        """Cleaned area of the job in square metres, if reported."""
-        if self.cleaned_cells is None:
-            return None
-        return self.cleaned_cells * self.grid.resolution**2
+    def cleaned_area(self) -> float:
+        """Area covered by the job in square metres, counted from the grid."""
+        return self.grid.cleaned_cells * self.grid.resolution**2
+
+    @property
+    def clean_time(self) -> Optional[int]:
+        """Seconds spent cleaning in the last job, from the robot's event log.
+
+        The sum of the log's ``DT_*_CLEAN_TIME`` entries (normal, wall-follow
+        and escape cleaning; docking is logged separately). ``None`` when the
+        log carries none — live frames have no log.
+        """
+        times = [
+            int(entry.code)
+            for entry in self.log
+            if entry.key.endswith("_CLEAN_TIME") and entry.code.isdigit()
+        ]
+        return sum(times) if times else None
 
     def to_dict(self) -> Dict[str, Any]:
         """Return a JSON-serialisable form of the map, for storage.
@@ -235,8 +258,6 @@ class VacuumMap:
             ],
             log=[VacuumLogEntry(**e) for e in data.get("log", [])],
             job_started=data.get("job_started"),
-            job_duration=data.get("job_duration"),
-            cleaned_cells=data.get("cleaned_cells"),
         )
 
 

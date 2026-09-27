@@ -106,13 +106,14 @@ def decode_map(fields: Dict[int, List[Any]]) -> Optional[VacuumMap]:
         if isinstance(room_ids, bytes) and len(room_ids) == len(grid.cells):
             grid.room_ids = room_ids
 
-    # Field 11 is the job summary: .1 start epoch, .3 duration s, .6 cleaned cells.
+    # Field 11 is a job summary; .1 is the job's start epoch. Its .3 and .6
+    # looked like duration and cleaned cells on one capture, but they barely
+    # moved between two different jobs (335 -> 306, 3947 -> 3978) while the
+    # robot's own log said 101 s and 70 s of cleaning, so they are not decoded:
+    # cleaned area comes from the grid and clean time from the log.
     stats = _first(m, 11)
     if isinstance(stats, bytes):
-        s = _fields(stats)
-        vacuum_map.job_started = _first(s, 1)
-        vacuum_map.job_duration = _first(s, 3)
-        vacuum_map.cleaned_cells = _first(s, 6)
+        vacuum_map.job_started = _first(_fields(stats), 1)
 
     # Field 20.3.6 is the robot's event log as a JSON array of {key, time, code}.
     vacuum_map.log = _decode_log(_first(m, 20))
