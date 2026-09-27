@@ -27,6 +27,7 @@ from .models import (
     MapPoint,
     MapPose,
     MapRoom,
+    SPOT_ROOM_NAME,
     VacuumLogEntry,
     VacuumMap,
 )
@@ -38,7 +39,6 @@ FIELD_PERSISTED_FLAG = 3
 # Room-record fields the app adds to a room selected for Matrix (deep) Clean.
 _DEEP_CLEAN_FIELDS = ((7, 2), (9, 0), (10, 2))
 # Spot Clean is a synthetic room of this name with a square polygon around the pin.
-SPOT_ROOM_NAME = "PinDrop"
 SPOT_HALF_SIZE = 0.762  # metres — the app draws a ~1.5 m square
 
 
@@ -290,7 +290,9 @@ def encode_room_selection(
     """
     if vacuum_map.map_id is None:
         raise ValueError("Map has no id; room cleaning needs a persisted map")
-    known = {room.name: room for room in vacuum_map.rooms}
+    # A spot zone left in the saved map is not a room anyone can choose, and
+    # is not re-uploaded: the definition sent is the app's rooms alone.
+    known = {room.name: room for room in vacuum_map.named_rooms}
     missing = [name for name in room_names if name not in known]
     if missing:
         raise ValueError(f"Unknown room(s) {missing}; map has {sorted(known)}")
@@ -299,9 +301,20 @@ def encode_room_selection(
         protobuf.encode_bytes_field(
             15, _encode_room(room, deep=deep and room.name in room_names)
         )
-        for room in vacuum_map.rooms
+        for room in vacuum_map.named_rooms
     )
     return _encode_selection(vacuum_map.map_id, rooms, room_names)
+
+
+def spot_polygon(x: float, y: float) -> List[MapPoint]:
+    """The square the app sends for a Spot Clean centred on ``(x, y)``."""
+    d = SPOT_HALF_SIZE
+    return [
+        MapPoint(x - d, y + d),
+        MapPoint(x + d, y + d),
+        MapPoint(x + d, y - d),
+        MapPoint(x - d, y - d),
+    ]
 
 
 def encode_spot_selection(vacuum_map: VacuumMap, x: float, y: float) -> bytes:
@@ -312,19 +325,11 @@ def encode_spot_selection(vacuum_map: VacuumMap, x: float, y: float) -> bytes:
     """
     if vacuum_map.map_id is None:
         raise ValueError("Map has no id; spot cleaning needs a persisted map")
-    d = SPOT_HALF_SIZE
-    spot = MapRoom(
-        name=SPOT_ROOM_NAME,
-        polygon=[
-            MapPoint(x - d, y + d),
-            MapPoint(x + d, y + d),
-            MapPoint(x + d, y - d),
-            MapPoint(x - d, y - d),
-        ],
-    )
+    spot = MapRoom(name=SPOT_ROOM_NAME, polygon=spot_polygon(x, y))
+    # The previous spot zone, if the saved map still has one, is replaced.
     rooms = b"".join(
         protobuf.encode_bytes_field(15, _encode_room(room, deep=False))
-        for room in vacuum_map.rooms
+        for room in vacuum_map.named_rooms
     ) + protobuf.encode_bytes_field(15, _encode_room(spot, deep=True, spot=True))
     return _encode_selection(vacuum_map.map_id, rooms, [SPOT_ROOM_NAME])
 

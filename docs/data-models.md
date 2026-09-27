@@ -133,9 +133,15 @@ class VacuumMap:
     def cleaned_area(self) -> float: ...         # m² covered by the job: grid.cleaned_cells × resolution²
     @property
     def clean_time(self) -> int | None: ...      # s spent cleaning, summed from the log's DT_*_CLEAN_TIME entries
+    @property
+    def named_rooms(self) -> list[MapRoom]: ...  # rooms without the spot zone
+    @property
+    def spot(self) -> MapRoom | None: ...        # the saved spot zone ("PinDrop"), if any
 ```
 
 All coordinates are metres in the map frame; headings are radians, `0` along +x, anticlockwise positive. Convert to grid cells with `col = (x - grid.origin.x) / grid.resolution` and `row = (y - grid.origin.y) / grid.resolution`; row 0 is the bottom of the map.
+
+A Spot Clean is sent as an extra room named `"PinDrop"` (a ~1.5 m square, `vacuum_map.spot_polygon(x, y)`), and the robot keeps it in its saved map afterwards, marked `selected` — so `rooms` can contain it. `named_rooms` leaves it out, and room and spot cleaning never re-upload it.
 
 The persisted map is only published when the robot docks, yet room and spot cleaning need it at any time. `map.to_dict()` returns a JSON-serialisable form (rasters base64-encoded, `raw` dropped) and `VacuumMap.from_dict(data)` rebuilds it, so a caller can store the latest persisted map and still clean rooms after a restart.
 

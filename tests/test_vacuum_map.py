@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import dataclasses
 import json
 import struct
 from pathlib import Path
@@ -16,6 +17,7 @@ from sharklocal.vacuum_map import (
     FIELD_PERSISTED_FLAG,
     SPOT_HALF_SIZE,
     SPOT_ROOM_NAME,
+    spot_polygon,
     decode_map,
     encode_room_selection,
     encode_spot_selection,
@@ -326,6 +328,32 @@ def test_cleaned_cells_are_where_the_robot_went(name):
         col = int((point.x - grid.origin.x) / grid.resolution)
         row = int((point.y - grid.origin.y) / grid.resolution)
         assert grid.cell(col, row) == MapGrid.CLEANED
+
+
+def _with_saved_spot(vacuum_map: VacuumMap) -> VacuumMap:
+    """The map as the robot saves it after a Spot Clean (measured 2026-09-26)."""
+    spot = MapRoom(SPOT_ROOM_NAME, spot_polygon(2.74, 0.02), selected=True, coverage=1.0)
+    return dataclasses.replace(vacuum_map, rooms=[*vacuum_map.rooms, spot])
+
+
+def test_saved_spot_zone_is_not_a_room(persisted_map):
+    saved = _with_saved_spot(persisted_map)
+    assert saved.spot.name == SPOT_ROOM_NAME
+    assert saved.spot.selected is True
+    assert [r.name for r in saved.named_rooms] == [r.name for r in persisted_map.rooms]
+    assert persisted_map.spot is None
+
+
+def test_saved_spot_zone_is_not_uploaded_with_a_room_clean(persisted_map):
+    saved = _with_saved_spot(persisted_map)
+    assert encode_room_selection(saved, ["Bathroom. "]) == _fixture("sharkiq_cmd_room_clean.b64")
+    with pytest.raises(ValueError, match="PinDrop"):
+        encode_room_selection(saved, [SPOT_ROOM_NAME])
+
+
+def test_new_spot_replaces_a_saved_one(persisted_map):
+    saved = _with_saved_spot(persisted_map)
+    assert encode_spot_selection(saved, 1.0, 2.0) == encode_spot_selection(persisted_map, 1.0, 2.0)
 
 
 # ---------------------------------------------------------------------------

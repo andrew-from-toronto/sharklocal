@@ -8,6 +8,12 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 
+# The app models a Spot Clean as an extra room of this name: a ~1.5 m square
+# around the pin. The robot keeps it in its saved map afterwards, marked as the
+# room the last job cleaned, until another room definition replaces it.
+SPOT_ROOM_NAME = "PinDrop"
+
+
 class VacuumMode(str, Enum):
     """Normalized operating modes across all transports."""
 
@@ -185,6 +191,16 @@ class VacuumMap:
     def robot(self) -> Optional[MapPose]:
         """Current robot pose: the last recorded pose, if any."""
         return self.poses[-1] if self.poses else None
+
+    @property
+    def named_rooms(self) -> List[MapRoom]:
+        """The rooms as the app names them — every room except a spot zone."""
+        return [room for room in self.rooms if room.name != SPOT_ROOM_NAME]
+
+    @property
+    def spot(self) -> Optional[MapRoom]:
+        """The spot-clean zone the robot saved, if the map carries one."""
+        return next((room for room in self.rooms if room.name == SPOT_ROOM_NAME), None)
 
     @property
     def cleaned_area(self) -> float:
