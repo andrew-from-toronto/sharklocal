@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import base64
 from typing import Any, Callable, Dict, List, Optional
 
@@ -10,6 +11,20 @@ from .exceptions import ActionNotSupportedError, CommandError, ConnectError, Dec
 from .mappings.base import MQTTMappingConfig
 from .models import VacuumMode, VacuumStatus
 from . import protobuf, vacuum_map
+
+# Imported once, here, rather than at first use: importing reads the package
+# from disk, and a first use inside Home Assistant's event loop is flagged as a
+# blocking call. Still optional, so a REST-only install works without it.
+try:
+    import aiomqtt
+except ImportError:  # pragma: no cover - exercised by patching this name
+    aiomqtt = None  # type: ignore[assignment]
+
+
+def _require_aiomqtt() -> Any:
+    if aiomqtt is None:
+        raise ConnectError("aiomqtt is required for MQTT support. Install with: pip install aiomqtt")
+    return aiomqtt
 
 
 # Registry mapping decoder name -> callable(payload_bytes, modes) -> VacuumStatus.
@@ -240,17 +255,11 @@ class MQTTVacuumClient:
 
         spec = self.mapping.actions[action]
 
-        try:
-            import aiomqtt
-        except ImportError as exc:
-            raise ConnectError(
-                "aiomqtt is required for MQTT support. "
-                "Install with: pip install aiomqtt"
-            ) from exc
+        mqtt = _require_aiomqtt()
 
         try:
             if spec.type == "command":
-                async with aiomqtt.Client(self.host, port=self.mapping.port) as client:
+                async with mqtt.Client(self.host, port=self.mapping.port) as client:
                     await client.publish(self.mapping.command_topic, payload=spec.payload)
                 return True
 
@@ -277,17 +286,14 @@ class MQTTVacuumClient:
         Raises:
             ConnectError: If the MQTT broker cannot be reached.
         """
-        try:
-            import aiomqtt
-        except ImportError as exc:
-            raise ConnectError("aiomqtt is required for MQTT support") from exc
+        mqtt = _require_aiomqtt()
 
         encoded: Any = payload
         if self.mapping.encoding == "base64":
             encoded = base64.b64encode(payload).decode("ascii")
 
         try:
-            async with aiomqtt.Client(self.host, port=self.mapping.port) as client:
+            async with mqtt.Client(self.host, port=self.mapping.port) as client:
                 await client.publish(self.mapping.command_topic, payload=encoded)
         except Exception as exc:
             raise ConnectError(
@@ -297,12 +303,9 @@ class MQTTVacuumClient:
 
     async def _request_status(self, command_payload: str, timeout: float) -> VacuumStatus:
         """Publish a status-request command and return the decoded first response."""
-        try:
-            import aiomqtt
-        except ImportError as exc:
-            raise ConnectError("aiomqtt is required for MQTT support") from exc
+        mqtt = _require_aiomqtt()
 
-        async with aiomqtt.Client(self.host, port=self.mapping.port) as client:
+        async with mqtt.Client(self.host, port=self.mapping.port) as client:
             await client.subscribe(self.mapping.status_topic)
             await client.publish(self.mapping.command_topic, payload=command_payload)
             try:
@@ -332,13 +335,10 @@ class MQTTVacuumClient:
             stop_event: Optional ``asyncio.Event``; when set, monitoring stops
                 cleanly after the current message.
         """
-        try:
-            import aiomqtt
-        except ImportError as exc:
-            raise ConnectError("aiomqtt is required for MQTT support") from exc
+        mqtt = _require_aiomqtt()
 
         try:
-            async with aiomqtt.Client(self.host, port=self.mapping.port) as client:
+            async with mqtt.Client(self.host, port=self.mapping.port) as client:
                 await client.subscribe(self.mapping.status_topic)
                 async for message in client.messages:
                     if stop_event and stop_event.is_set():
@@ -347,7 +347,7 @@ class MQTTVacuumClient:
                         status = self._decode_status(bytes(message.payload))
                     except (DecoderError, CommandError):
                         continue  # Skip malformed messages silently
-                    if asyncio.iscoroutinefunction(callback):
+                    if inspect.iscoroutinefunction(callback):
                         await callback(status)
                     else:
                         callback(status)

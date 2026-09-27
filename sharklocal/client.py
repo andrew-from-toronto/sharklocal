@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 
@@ -422,7 +423,7 @@ class VacuumClient:
         if status.map is not None and status.map.persisted and not self._same_job_poorer(status.map):
             self.last_map = status.map
         callback = self._status_callback
-        if asyncio.iscoroutinefunction(callback):
+        if inspect.iscoroutinefunction(callback):
             await callback(status)
         else:
             callback(status)  # type: ignore[misc]

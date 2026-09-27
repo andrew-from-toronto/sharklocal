@@ -618,14 +618,7 @@ async def test_call_aiomqtt_import_error_raises_connect_error(mqtt_mapping):
     """If aiomqtt cannot be imported, call() raises ConnectError."""
     client = MQTTVacuumClient("host", mqtt_mapping)
 
-    original_import = __builtins__.__import__ if hasattr(__builtins__, "__import__") else __import__
-
-    def _failing_import(name, *args, **kwargs):
-        if name == "aiomqtt":
-            raise ImportError("No module named 'aiomqtt'")
-        return original_import(name, *args, **kwargs)
-
-    with patch("builtins.__import__", side_effect=_failing_import):
+    with patch("sharklocal.mqtt_client.aiomqtt", None):
         with pytest.raises(ConnectError, match="aiomqtt is required"):
             await client.call("start_cleaning")
 
@@ -639,15 +632,7 @@ async def test_request_status_aiomqtt_import_error_raises_connect_error(mqtt_map
     """If aiomqtt cannot be imported in _request_status, ConnectError is raised."""
     client = MQTTVacuumClient("host", mqtt_mapping)
 
-    import builtins
-    real_import = builtins.__import__
-
-    def _failing_import(name, *args, **kwargs):
-        if name == "aiomqtt":
-            raise ImportError("No module named 'aiomqtt'")
-        return real_import(name, *args, **kwargs)
-
-    with patch("builtins.__import__", side_effect=_failing_import):
+    with patch("sharklocal.mqtt_client.aiomqtt", None):
         with pytest.raises(ConnectError, match="aiomqtt is required"):
             await client._request_status("DDDD", 5.0)
 
@@ -661,15 +646,7 @@ async def test_monitor_aiomqtt_import_error_raises_connect_error(mqtt_mapping):
     """If aiomqtt cannot be imported in monitor(), ConnectError is raised."""
     client = MQTTVacuumClient("host", mqtt_mapping)
 
-    import builtins
-    real_import = builtins.__import__
-
-    def _failing_import(name, *args, **kwargs):
-        if name == "aiomqtt":
-            raise ImportError("No module named 'aiomqtt'")
-        return real_import(name, *args, **kwargs)
-
-    with patch("builtins.__import__", side_effect=_failing_import):
+    with patch("sharklocal.mqtt_client.aiomqtt", None):
         with pytest.raises(ConnectError, match="aiomqtt is required"):
             await client.monitor(lambda s: None)
 
@@ -820,6 +797,6 @@ async def test_send_wraps_broker_errors_in_connect_error(mqtt_mapping):
 
 async def test_send_without_aiomqtt_raises_connect_error(mqtt_mapping):
     client = MQTTVacuumClient("host", mqtt_mapping)
-    with patch.dict(sys.modules, {"aiomqtt": None}):
+    with patch("sharklocal.mqtt_client.aiomqtt", None):
         with pytest.raises(ConnectError, match="aiomqtt is required"):
             await client.send(b"\x00")
